@@ -6,7 +6,7 @@ import numpy as np
 import requests
 from io import BytesIO
 import matplotlib.pyplot as plt
-
+from PIL import Image
 
 evaluation_set_rgb_folder_link = "https://drive.google.com/drive/folders/1Ua9R3pC5HZdiUKPGdoCpS_MKmy6O4_-p?usp=drive_link"
 
@@ -21,7 +21,7 @@ evaluation_set_rgb_folder_link = "https://drive.google.com/drive/folders/1Ua9R3p
 EVALUATION_SET_RGB_FOLDER_LINK = "https://drive.google.com/drive/folders/1Ua9R3pC5HZdiUKPGdoCpS_MKmy6O4_-p?usp=drive_link"
 EVALUATION_SET_DEPTH_FOLDER_LINK = "https://drive.google.com/drive/folders/1V_rZAPt13EFp1k4ouwsSLj9_Fh9L_red?usp=drive_link"
 EVALUATION_SET_RGB_FOLDER_NAME = 'EvaluationSetRGB'
-EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetRGB'
+EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetDepth'
 
 [ ]
 
@@ -43,9 +43,11 @@ def part1():
     input_image_filename = f"{str(IMAGE_INDEX).zfill(3)}_rgb.jpg"
     input_image = cv2.imread(os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, input_image_filename))
 
+
     # The RGB color of the 100th pixel from the left, 200th pixel from the top in the 25th image chronologically.
     X_INDEX = 100
     Y_INDEX = 200
+
     rgb_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
     rgb_color = rgb_image[Y_INDEX][X_INDEX]
     print(f'The RGB color of the 100th pixel from the left, 200th pixel from the top in the 25th image chronologically: ({rgb_color})')
@@ -53,13 +55,14 @@ def part1():
     # The depth of this same pixel, via the depth map, returned in millimeters.
     depth_filename = get_depth_filename_from_image_filename(input_image_filename)
     depth_image = cv2.imread(os.path.join(EVALUATION_SET_DEPTH_FOLDER_NAME, depth_filename))
-    depth_at_pixel = depth_image[Y_INDEX][X_INDEX]
+    depth_at_pixel = depth_image[Y_INDEX][X_INDEX][0] # all of the channels are the same so just take the first value for the depth
+    depth_map = depth_image[:,:,0]
     print(f"The depth of this same pixel, via the depth map, returned in millimeters: {depth_at_pixel}")
 
     # The total number of pixels in this image that have depth values +/- 10 mm of the depth value you found.
     BOUND_PLUS_MINUS = 10 # bounding in mm
-    mask = (depth_image > depth_at_pixel-BOUND_PLUS_MINUS) & (depth_image < depth_at_pixel+BOUND_PLUS_MINUS)
-    print(f"The total number of pixels in this image that have depth values +/- 10 mm of the depth value you found: {sum(mask)}")
+    mask = ((depth_map > depth_at_pixel-BOUND_PLUS_MINUS) & (depth_map < depth_at_pixel+BOUND_PLUS_MINUS)).astype(int)
+    print(f"The total number of pixels in this image that have depth values +/- 10 mm of the depth value you found: {np.sum(mask)}")
 
 def part2():
     """Part 2
@@ -259,3 +262,10 @@ Assume that the location of the first tree is (x, y) = (0 meters, 0 meters), and
     plt.xlabel('X (meters)')
     plt.ylabel('Y (meters)')
     plt.show()
+
+if __name__ == '__main__':
+    part1()
+    # part2()
+    # part3()
+    # part4()
+    # part5()
