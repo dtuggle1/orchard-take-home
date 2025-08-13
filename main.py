@@ -6,6 +6,8 @@ import numpy as np
 import requests
 from io import BytesIO
 import matplotlib.pyplot as plt
+from helpers import *
+import copy
 from PIL import Image
 
 evaluation_set_rgb_folder_link = "https://drive.google.com/drive/folders/1Ua9R3pC5HZdiUKPGdoCpS_MKmy6O4_-p?usp=drive_link"
@@ -25,8 +27,7 @@ EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetDepth'
 
 [ ]
 
-def get_depth_filename_from_image_filename(image_filename):
-  return f"{image_filename[:3]}_depth.png"
+
 
 def part1():
     IMAGE_INDEX = 25
@@ -61,7 +62,8 @@ def part1():
 
     # The total number of pixels in this image that have depth values +/- 10 mm of the depth value you found.
     BOUND_PLUS_MINUS = 10 # bounding in mm
-    mask = ((depth_map > depth_at_pixel-BOUND_PLUS_MINUS) & (depth_map < depth_at_pixel+BOUND_PLUS_MINUS)).astype(int)
+    mask = ((depth_map >= depth_at_pixel-BOUND_PLUS_MINUS) & (depth_map <=
+                                                              depth_at_pixel+BOUND_PLUS_MINUS)).astype(int)
     print(f"The total number of pixels in this image that have depth values +/- 10 mm of the depth value you found: {np.sum(mask)}")
 
 def part2():
@@ -106,9 +108,9 @@ def part2():
     # Below, we demonstrate how to parse the label file and plot a mask on top of an image.
     """
 
-    image_path = "/content/Images/130_rgb.jpg"
-    label_file_path = "/content/Labels/130_label.txt"
-
+    # image_path = "/content/Images/130_rgb.jpg"
+    # label_file_path = "/content/Labels/130_label.txt"
+    #
     def convert_label_contour(label_line, img_shape):
         parts = label_line.strip().split()
         class_label = int(parts[0])
@@ -116,19 +118,49 @@ def part2():
             return None
         coordinates = [(float(parts[i]) * img_shape[1], float(parts[i + 1]) * img_shape[0]) for i in range(1, len(parts), 2)]
         return np.int32([coordinates])
+    #
+    # # Read the image
+    # image = cv2.imread(image_path)
+    #
+    # # Read the label file and plot the labels of each mask as a polygon, filled with green
+    # with open(label_file_path, 'r') as file:
+    #     for line in file:
+    #         contour = convert_label_contour(line, image.shape)
+    #         if contour is not None:
+    #             cv2.fillPoly(image, [contour], (0, 255, 0))
+    #
+    # # Save the result
+    # cv2.imwrite("test_mask.jpg", image)
 
-    # Read the image
-    image = cv2.imread(image_path)
+    ### MY CODE BELOW
 
-    # Read the label file and plot the labels of each mask as a polygon, filled with green
-    with open(label_file_path, 'r') as file:
-        for line in file:
-            contour = convert_label_contour(line, image.shape)
-            if contour is not None:
-                cv2.fillPoly(image, [contour], (0, 255, 0))
+    MASKED_TRAINING_DATA_FOLDER = 'MaskedTrainingData'
+    if MASKED_TRAINING_DATA_FOLDER not in os.listdir('Training Data'):
+        os.mkdir(os.path.join('Training Data', MASKED_TRAINING_DATA_FOLDER))
 
-    # Save the result
-    cv2.imwrite("test_mask.jpg", image)
+    label_folder_path = os.path.join('Training Data', 'Labels')
+    training_image_folder_path = os.path.join('Training Data', 'Images')
+    masked_folder_path = os.path.join('Training Data', 'MaskedTrainingData')
+
+    for image_file in os.listdir(training_image_folder_path):
+        training_image_path = os.path.join(training_image_folder_path, image_file)
+        training_image = cv2.imread(training_image_path)
+        training_image_label_filename = get_label_filename_from_training_image_filename(
+            image_file)
+        training_image_label_path = os.path.join(label_folder_path, training_image_label_filename)
+        masked_image = copy.deepcopy(training_image)
+
+        with open(training_image_label_path, 'r') as file:
+            for line in file:
+                contour = convert_label_contour(line, masked_image.shape)
+                if contour is not None:
+                    cv2.fillPoly(masked_image, [contour], (0, 255, 0))
+
+        # Save the result
+        cv2.imwrite(os.path.join(masked_folder_path, f"{image_file[:3]}_masked.jpg"),
+                                 masked_image)
+
+
 
     # labelled_image = Image.open("test_mask.jpg")
     # display(labelled_image)
@@ -264,8 +296,8 @@ Assume that the location of the first tree is (x, y) = (0 meters, 0 meters), and
     plt.show()
 
 if __name__ == '__main__':
-    part1()
-    # part2()
+    # part1()
+    part2()
     # part3()
     # part4()
     # part5()

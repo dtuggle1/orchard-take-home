@@ -1,5 +1,4 @@
 import os
-import gdown
 
 def check_if_downloaded(folder_name, filenames):
   """
