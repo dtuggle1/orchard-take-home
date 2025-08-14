@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from helpers import *
 import copy
 from PIL import Image
+from ultralytics import YOLO
 
 evaluation_set_rgb_folder_link = "https://drive.google.com/drive/folders/1Ua9R3pC5HZdiUKPGdoCpS_MKmy6O4_-p?usp=drive_link"
 
@@ -107,7 +108,7 @@ def part2():
     # Each label textfile may have 0, 1, 2, or more masks, each on a new line of the text file.
     # Below, we demonstrate how to parse the label file and plot a mask on top of an image.
     """
-
+    np.seed(1) #todo: update seed
     # image_path = "/content/Images/130_rgb.jpg"
     # label_file_path = "/content/Labels/130_label.txt"
     #
@@ -134,6 +135,7 @@ def part2():
 
     ### MY CODE BELOW
 
+    TRANSPARENCY_LEVEL = 0.4
     MASKED_TRAINING_DATA_FOLDER = 'MaskedTrainingData'
     if MASKED_TRAINING_DATA_FOLDER not in os.listdir('Training Data'):
         os.mkdir(os.path.join('Training Data', MASKED_TRAINING_DATA_FOLDER))
@@ -142,30 +144,31 @@ def part2():
     training_image_folder_path = os.path.join('Training Data', 'Images')
     masked_folder_path = os.path.join('Training Data', 'MaskedTrainingData')
 
+    # Overlay the labels on the training image for easier viewing
     for image_file in os.listdir(training_image_folder_path):
         training_image_path = os.path.join(training_image_folder_path, image_file)
         training_image = cv2.imread(training_image_path)
         training_image_label_filename = get_label_filename_from_training_image_filename(
             image_file)
         training_image_label_path = os.path.join(label_folder_path, training_image_label_filename)
-        masked_image = copy.deepcopy(training_image)
-
-        with open(training_image_label_path, 'r') as file:
-            for line in file:
-                contour = convert_label_contour(line, masked_image.shape)
-                if contour is not None:
-                    cv2.fillPoly(masked_image, [contour], (0, 255, 0))
-
+        overlay = copy.deepcopy(training_image)
+        masked_image = overlay_label(training_image_label_path, training_image, TRANSPARENCY_LEVEL)
         # Save the result
         cv2.imwrite(os.path.join(masked_folder_path, f"{image_file[:3]}_masked.jpg"),
                                  masked_image)
-
-
 
     # labelled_image = Image.open("test_mask.jpg")
     # display(labelled_image)
 
     # Below is where you write your code to train your ML model to predict masks on trunks
+
+    class TrunkDetector:
+        def __init__(self):
+            self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
+        def train(self):
+
+
+
 
 
     # Augment the image data
@@ -205,8 +208,6 @@ def part2():
     # Things I would do with more time
     # Detect ground/soil and verify that the the bottom of trunks are embedded in the
     # ground. 
-
-
 
 def part3():
     """
