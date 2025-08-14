@@ -1,3 +1,5 @@
+from torch.backends.cudnn import deterministic
+
 [ ]
 import os
 from download import *
@@ -19,15 +21,11 @@ evaluation_set_rgb_folder_link = "https://drive.google.com/drive/folders/1Ua9R3p
 
 # Check that an image exists in the Colab filesystem
 
-[ ]
 # Add Evaluation Set Files
 EVALUATION_SET_RGB_FOLDER_LINK = "https://drive.google.com/drive/folders/1Ua9R3pC5HZdiUKPGdoCpS_MKmy6O4_-p?usp=drive_link"
 EVALUATION_SET_DEPTH_FOLDER_LINK = "https://drive.google.com/drive/folders/1V_rZAPt13EFp1k4ouwsSLj9_Fh9L_red?usp=drive_link"
 EVALUATION_SET_RGB_FOLDER_NAME = 'EvaluationSetRGB'
 EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetDepth'
-
-[ ]
-
 
 
 def part1():
@@ -108,41 +106,17 @@ def part2():
     # Each label textfile may have 0, 1, 2, or more masks, each on a new line of the text file.
     # Below, we demonstrate how to parse the label file and plot a mask on top of an image.
     """
-    np.seed(1) #todo: update seed
-    # image_path = "/content/Images/130_rgb.jpg"
-    # label_file_path = "/content/Labels/130_label.txt"
-    #
-    def convert_label_contour(label_line, img_shape):
-        parts = label_line.strip().split()
-        class_label = int(parts[0])
-        if class_label != 0:
-            return None
-        coordinates = [(float(parts[i]) * img_shape[1], float(parts[i + 1]) * img_shape[0]) for i in range(1, len(parts), 2)]
-        return np.int32([coordinates])
-    #
-    # # Read the image
-    # image = cv2.imread(image_path)
-    #
-    # # Read the label file and plot the labels of each mask as a polygon, filled with green
-    # with open(label_file_path, 'r') as file:
-    #     for line in file:
-    #         contour = convert_label_contour(line, image.shape)
-    #         if contour is not None:
-    #             cv2.fillPoly(image, [contour], (0, 255, 0))
-    #
-    # # Save the result
-    # cv2.imwrite("test_mask.jpg", image)
+
 
     ### MY CODE BELOW
 
     TRANSPARENCY_LEVEL = 0.4
     MASKED_TRAINING_DATA_FOLDER = 'MaskedTrainingData'
-    if MASKED_TRAINING_DATA_FOLDER not in os.listdir('Training Data'):
-        os.mkdir(os.path.join('Training Data', MASKED_TRAINING_DATA_FOLDER))
+    if MASKED_TRAINING_DATA_FOLDER not in os.listdir():
+        os.mkdir(os.path.join(MASKED_TRAINING_DATA_FOLDER))
 
     label_folder_path = os.path.join('Training Data', 'Labels')
     training_image_folder_path = os.path.join('Training Data', 'Images')
-    masked_folder_path = os.path.join('Training Data', 'MaskedTrainingData')
 
     # Overlay the labels on the training image for easier viewing
     for image_file in os.listdir(training_image_folder_path):
@@ -154,7 +128,7 @@ def part2():
         overlay = copy.deepcopy(training_image)
         masked_image = overlay_label(training_image_label_path, training_image, TRANSPARENCY_LEVEL)
         # Save the result
-        cv2.imwrite(os.path.join(masked_folder_path, f"{image_file[:3]}_masked.jpg"),
+        cv2.imwrite(os.path.join(MASKED_TRAINING_DATA_FOLDER, f"{image_file[:3]}_masked.jpg"),
                                  masked_image)
 
     # labelled_image = Image.open("test_mask.jpg")
@@ -163,10 +137,50 @@ def part2():
     # Below is where you write your code to train your ML model to predict masks on trunks
 
     class TrunkDetector:
-        def __init__(self):
-            self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
-        def train(self):
+        dataset_config = {
+            'path': 'Training Data',
+            'train': 'Images',
+            'val': 'Images',
+            'nc': 1,  # number of classes
+            'names': ['Trunk']  # class name
+        }
 
+        def __init__(self, training_image_folder_path):
+            self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
+
+        def train(self):
+            self.model.train(
+                data = self.dataset_config,
+                seed = 1,
+                deterministic = True,
+                epochs = 20,
+                warmup_epochs = 5,
+                fraction = 0.8, # 80/20 Test/train split
+
+                # Augmentations (Initially generated from AI, then tuned Prompt: Could you please give me augmentations to add to my self.model.train() params for a yolov8-seg model that will be trained to detect tree trunks. Please provide the augmentations and nothing else. I want to add the following augmentations, and I want them to be of low intensity unless otherwise specified: blur, brightness, contrast, shadows, color shifting based on time of day, rotation up to 10 degrees, horizontal flip, perspective up to 10 degrees)
+
+                degrees = 5.0,
+                translate = 0.05,
+                scale = 0.1,
+                perspective = 0.02,
+                fliplr = 0.5,
+                hsv_h = 0.01,
+                hsv_s = 0.3,
+                hsv_v = 0.3,
+                blur = 0.1,
+
+                # Learning params
+                lr0 = 0.01, # set initial learning rate to high such that it converges faster
+                lrf = 0.1, # set final learning rate to 1/100 of lr0 for finer tuning and preventing overshoot
+
+                plots = True,
+
+                patience = 30, #
+                save_period = 5
+
+            )
+
+    model = TrunkDetector()
 
 
 
