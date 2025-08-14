@@ -1,0 +1,5 @@
+path: TrainingData
+train: train
+val: train
+nc: 1
+names: ['Trunk']

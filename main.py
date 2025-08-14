@@ -91,11 +91,11 @@ def part2():
     """
     """
     # This downloads all of the images in the EvaluationSetRGB google drive folder to Colab's local filesystem. In this case, these files will have downloaded
-    # 30 images + 30 labels = 60 total files should be downloaded from the RGB folder on google drive, to "/content/Images/" and "/content/Labels/" locally
+    # 30 images + 30 labels = 60 total files should be downloaded from the RGB folder on google drive, to "/content/images/" and "/content/labels/" locally
 
     # Check that an image and corresponding label exists in the Colab filesystem
-    print("File downloaded: ", os.path.exists("/content/Images/130_rgb.jpg"))
-    print("File downloaded: ", os.path.exists("/content/Labels/130_label.txt"))
+    print("File downloaded: ", os.path.exists("/content/images/130_rgb.jpg"))
+    print("File downloaded: ", os.path.exists("/content/labels/130_label.txt"))
 
     # The labels are stored in the YOLOv5 contour mask format, where each line in the text file represents a separate mask label. Within each line, the first token (an integer) represents a class
     # In this case, since there is just one class "Trunk", all of the labels have class = "0". The following N * 2 tokens (all floats) represent the coordinates of each of the points of the mask.
@@ -110,64 +110,73 @@ def part2():
 
     ### MY CODE BELOW
 
+    # for file in os.listdir(os.path.join('TrainingData', 'images')):
+    #     if '_rgb' in file:
+    #         new_filename = f"{file[:3]}.jpg"
+    #         os.rename(os.path.join('Training Data', 'images', file), os.path.join('TrainingData', 'images', new_filename))
+    # for file in os.listdir(os.path.join('TrainingData', 'labels')):
+    #     if '_label' in file:
+    #         new_filename = f"{file[:3]}.txt"
+    #         os.rename(os.path.join('TrainingData', 'labels', file), os.path.join('TrainingData', 'labels', new_filename))
+
+
     TRANSPARENCY_LEVEL = 0.4
     MASKED_TRAINING_DATA_FOLDER = 'MaskedTrainingData'
     if MASKED_TRAINING_DATA_FOLDER not in os.listdir():
         os.mkdir(os.path.join(MASKED_TRAINING_DATA_FOLDER))
 
-    label_folder_path = os.path.join('Training Data', 'Labels')
-    training_image_folder_path = os.path.join('Training Data', 'Images')
+    label_folder_path = os.path.join('TrainingData', 'labels')
+    training_image_folder_path = os.path.join('TrainingData', 'images')
 
     # Overlay the labels on the training image for easier viewing
-    for image_file in os.listdir(training_image_folder_path):
-        training_image_path = os.path.join(training_image_folder_path, image_file)
-        training_image = cv2.imread(training_image_path)
-        training_image_label_filename = get_label_filename_from_training_image_filename(
-            image_file)
-        training_image_label_path = os.path.join(label_folder_path, training_image_label_filename)
-        overlay = copy.deepcopy(training_image)
-        masked_image = overlay_label(training_image_label_path, training_image, TRANSPARENCY_LEVEL)
-        # Save the result
-        cv2.imwrite(os.path.join(MASKED_TRAINING_DATA_FOLDER, f"{image_file[:3]}_masked.jpg"),
-                                 masked_image)
+    # for image_file in os.listdir(training_image_folder_path):
+    #     training_image_path = os.path.join(training_image_folder_path, image_file)
+    #     training_image = cv2.imread(training_image_path)
+    #     training_image_label_filename = get_label_filename_from_training_image_filename(
+    #         image_file)
+    #     training_image_label_path = os.path.join(label_folder_path, training_image_label_filename)
+    #     overlay = copy.deepcopy(training_image)
+    #     masked_image = overlay_label(training_image_label_path, training_image, TRANSPARENCY_LEVEL)
+    #     # Save the result
+    #     cv2.imwrite(os.path.join(MASKED_TRAINING_DATA_FOLDER, f"{image_file[:3]}_masked.jpg"),
+    #                              masked_image)
 
     # labelled_image = Image.open("test_mask.jpg")
     # display(labelled_image)
+    
+    # for label_file in os.listdir('OriginalLabels'):
+    #     process_label_file(os.path.join('OriginalLabels', label_file), os.path.join('TrainingData', 'labels', label_file))
+
 
     # Below is where you write your code to train your ML model to predict masks on trunks
 
     class TrunkDetector:
-        dataset_config = {
-            'path': 'Training Data',
-            'train': 'Images',
-            'val': 'Images',
-            'nc': 1,  # number of classes
-            'names': ['Trunk']  # class name
-        }
 
-        def __init__(self, training_image_folder_path):
+        def __init__(self):
             self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
 
         def train(self):
             self.model.train(
-                data = self.dataset_config,
+                data = 'model_config.yml',
                 seed = 1,
                 deterministic = True,
                 epochs = 20,
                 warmup_epochs = 5,
                 fraction = 0.8, # 80/20 Test/train split
 
-                # Augmentations (Initially generated from AI, then tuned Prompt: Could you please give me augmentations to add to my self.model.train() params for a yolov8-seg model that will be trained to detect tree trunks. Please provide the augmentations and nothing else. I want to add the following augmentations, and I want them to be of low intensity unless otherwise specified: blur, brightness, contrast, shadows, color shifting based on time of day, rotation up to 10 degrees, horizontal flip, perspective up to 10 degrees)
+                # Augmentations
+                degrees = 3, # how much it is anticipated to see trees with differing levels of rotation
+                translate = 0.5, # help with detecting partially visible tree trunks
+                fliplr = 0.5, # trees dont have a left/right orientation so adding this provides more good data
+                hsv_h = 0,
+                hsv_s = 0,
+                hsv_v = 0,
+                scale = 0, # only looking for trees in the foreground, so disable this to help prevent finding trees in the background
+                shear = 0, # trunks are cylindrical so shear is unlikely to have an effect
+                perspective = 0, # similar reasoning as shear
+                flipud = 0, # tree trunks always have a certain orientation coming out of the ground
 
-                degrees = 5.0,
-                translate = 0.05,
-                scale = 0.1,
-                perspective = 0.02,
-                fliplr = 0.5,
-                hsv_h = 0.01,
-                hsv_s = 0.3,
-                hsv_v = 0.3,
-                blur = 0.1,
+
 
                 # Learning params
                 lr0 = 0.01, # set initial learning rate to high such that it converges faster
@@ -181,6 +190,7 @@ def part2():
             )
 
     model = TrunkDetector()
+    model.train()
 
 
 
