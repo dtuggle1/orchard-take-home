@@ -160,8 +160,8 @@ def part2():
                 data = 'model_config.yml',
                 seed = 1,
                 deterministic = True,
-                epochs = 20,
-                warmup_epochs = 5,
+                epochs = 600,
+                warmup_epochs = 50,
                 fraction = 0.8, # 80/20 Test/train split
 
                 # Augmentations
@@ -180,12 +180,12 @@ def part2():
 
                 # Learning params
                 lr0 = 0.01, # set initial learning rate to high such that it converges faster
-                lrf = 0.1, # set final learning rate to 1/100 of lr0 for finer tuning and preventing overshoot
+                lrf = 0.05, # set final learning rate to 1/100 of lr0 for finer tuning and preventing overshoot
 
                 plots = True,
 
                 patience = 30, #
-                save_period = 5
+                save_period = 50
 
             )
 
