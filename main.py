@@ -30,6 +30,7 @@ EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetDepth'
 EVALUATION_SET_OUTPUTS_FOLDER_NAME = 'EvaluationSetOutputs'
 TRAINING_DATA_FOLDER_NAME = 'Training Data'
 MASKED_TRAINING_DATA_FOLDER_NAME = 'MaskedTrainingData'
+CONF_THRESH = .35
 
 EVALUATE_EVALUATION_SET = True
 OVERLAY_LABELS_ON_TRAIN_DATA = True
@@ -197,13 +198,26 @@ def part2():
         os.mkdir(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
 
         eval_images = []
+        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[:3]: #TODO: REMOVE, ONLY 3 FOR TESTING
+        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[34:35]: #TODO: REMOVE, ONLY 3 FOR TESTING
         for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME): #TODO: REMOVE, ONLY 3 FOR TESTING
             eval_images.append(os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, eval_image_filename))
         results = model(eval_images)
         for result in results:
+            # AI WROTE THE BELOW 3 LINES. I asked it to filter predictions for me based on a confidence threshold
+            if result.masks is not None:
+                result.masks = result.masks[result.boxes.conf > CONF_THRESH]
+            result.boxes = result.boxes[result.boxes.conf > CONF_THRESH]
+
+            # Remove overlaps
+            result = remove_overlaps(result)
+
+            # Filter by depth
+
             im = result.plot(txt_color=(0,0,255))
             save_path = os.path.join(EVALUATION_SET_OUTPUTS_FOLDER_NAME, f"{result.path.split('\\')[1][:3]}_predict.jpg")
             Image.fromarray(im).save(save_path)
+            print()
 
 
 
