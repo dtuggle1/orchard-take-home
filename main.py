@@ -12,12 +12,13 @@ from helpers import *
 import copy
 from PIL import Image
 from ultralytics import YOLO
+import torch
 
 evaluation_set_rgb_folder_link = "https://drive.google.com/drive/folders/1Ua9R3pC5HZdiUKPGdoCpS_MKmy6O4_-p?usp=drive_link"
 
 
-# This downloads all of the images in the EvaluationSetRGB google drive folder to Colab's local filesystem. In this case,
-# 49 files should be downloaded from the RGB folder on google drive, to "/content/EvaluationSetRGB/" locally, stored as images 001 to 049
+# This downloads all of the Images in the EvaluationSetRGB google drive folder to Colab's local filesystem. In this case,
+# 49 files should be downloaded from the RGB folder on google drive, to "/content/EvaluationSetRGB/" locally, stored as Images 001 to 049
 
 # Check that an image exists in the Colab filesystem
 
@@ -68,9 +69,9 @@ def part1():
 def part2():
     """Part 2
 
-    In this part, you will train a machine learning model to detect tree trunks. As part of this challenge you should have received a separate folder with two sub-folders, "images" and "labels".
+    In this part, you will train a machine learning model to detect tree trunks. As part of this challenge you should have received a separate folder with two sub-folders, "Images" and "Labels".
 
-    In these folders, there are 30 images of tree trunks, and 30 corresponding annotation files containing masks of the tree trunks.
+    In these folders, there are 30 Images of tree trunks, and 30 corresponding annotation files containing masks of the tree trunks.
 
     The amount of labelled training data will be relatively sparse, and while the trunks in the training data will look similar to the ones in the challenge's Evaluation Set, they will not be exactly the same trunks.
 
@@ -86,19 +87,19 @@ def part2():
 
     ExampleTrunkPredictions.png
 
-    Below, we demonstrate how to download and load in the trunk images and masks, as well as how to parse the mask label files to plot the masks on top of images.
+    Below, we demonstrate how to download and load in the trunk Images and masks, as well as how to parse the mask label files to plot the masks on top of Images.
 
     """
     """
-    # This downloads all of the images in the EvaluationSetRGB google drive folder to Colab's local filesystem. In this case, these files will have downloaded
-    # 30 images + 30 labels = 60 total files should be downloaded from the RGB folder on google drive, to "/content/images/" and "/content/labels/" locally
+    # This downloads all of the Images in the EvaluationSetRGB google drive folder to Colab's local filesystem. In this case, these files will have downloaded
+    # 30 Images + 30 Labels = 60 total files should be downloaded from the RGB folder on google drive, to "/content/Images/" and "/content/Labels/" locally
 
     # Check that an image and corresponding label exists in the Colab filesystem
-    print("File downloaded: ", os.path.exists("/content/images/130_rgb.jpg"))
-    print("File downloaded: ", os.path.exists("/content/labels/130_label.txt"))
+    print("File downloaded: ", os.path.exists("/content/Images/130_rgb.jpg"))
+    print("File downloaded: ", os.path.exists("/content/Labels/130_label.txt"))
 
-    # The labels are stored in the YOLOv5 contour mask format, where each line in the text file represents a separate mask label. Within each line, the first token (an integer) represents a class
-    # In this case, since there is just one class "Trunk", all of the labels have class = "0". The following N * 2 tokens (all floats) represent the coordinates of each of the points of the mask.
+    # The Labels are stored in the YOLOv5 contour mask format, where each line in the text file represents a separate mask label. Within each line, the first token (an integer) represents a class
+    # In this case, since there is just one class "Trunk", all of the Labels have class = "0". The following N * 2 tokens (all floats) represent the coordinates of each of the points of the mask.
     # Together, the points for each label represent individual vertices of a contour / polygon that represents the mask. Each of the points/vertices is represented as "x y ", delineated with spaces.
     # In this coordinate frame, (x, y) = (0, 0) at the top left corner of the image. Each X and Y value is a float between 0 and 1, representing the proportion of the image's width/height where the vertex occurs.
     # i.e. (x, y) = (0.25, 0.5) would be the point 1/4 from the left of the image, and halfway down the image from the top.
@@ -110,14 +111,14 @@ def part2():
 
     ### MY CODE BELOW
 
-    # for file in os.listdir(os.path.join('TrainingData', 'images')):
+    # for file in os.listdir(os.path.join('Training Data', 'Images')):
     #     if '_rgb' in file:
     #         new_filename = f"{file[:3]}.jpg"
-    #         os.rename(os.path.join('Training Data', 'images', file), os.path.join('TrainingData', 'images', new_filename))
-    # for file in os.listdir(os.path.join('TrainingData', 'labels')):
+    #         os.rename(os.path.join('Training Data', 'Images', file), os.path.join('Training Data', 'Images', new_filename))
+    # for file in os.listdir(os.path.join('Training Data', 'Labels')):
     #     if '_label' in file:
     #         new_filename = f"{file[:3]}.txt"
-    #         os.rename(os.path.join('TrainingData', 'labels', file), os.path.join('TrainingData', 'labels', new_filename))
+    #         os.rename(os.path.join('Training Data', 'Labels', file), os.path.join('Training Data', 'Labels', new_filename))
 
 
     TRANSPARENCY_LEVEL = 0.4
@@ -125,10 +126,10 @@ def part2():
     if MASKED_TRAINING_DATA_FOLDER not in os.listdir():
         os.mkdir(os.path.join(MASKED_TRAINING_DATA_FOLDER))
 
-    label_folder_path = os.path.join('TrainingData', 'labels')
-    training_image_folder_path = os.path.join('TrainingData', 'images')
+    label_folder_path = os.path.join('Training Data', 'Labels')
+    training_image_folder_path = os.path.join('Training Data', 'Images')
 
-    # Overlay the labels on the training image for easier viewing
+    # Overlay the Labels on the training image for easier viewing
     # for image_file in os.listdir(training_image_folder_path):
     #     training_image_path = os.path.join(training_image_folder_path, image_file)
     #     training_image = cv2.imread(training_image_path)
@@ -145,7 +146,7 @@ def part2():
     # display(labelled_image)
     
     # for label_file in os.listdir('OriginalLabels'):
-    #     process_label_file(os.path.join('OriginalLabels', label_file), os.path.join('TrainingData', 'labels', label_file))
+    #     process_label_file(os.path.join('OriginalLabels', label_file), os.path.join('Training Data', 'Labels', label_file))
 
 
     # Below is where you write your code to train your ML model to predict masks on trunks
@@ -168,13 +169,13 @@ def part2():
                 degrees = 3, # how much it is anticipated to see trees with differing levels of rotation
                 translate = 0.5, # help with detecting partially visible tree trunks
                 fliplr = 0.5, # trees dont have a left/right orientation so adding this provides more good data
+                flipud = 0, # tree trunks always have a certain orientation coming out of the ground
                 hsv_h = 0,
                 hsv_s = 0,
                 hsv_v = 0,
                 scale = 0, # only looking for trees in the foreground, so disable this to help prevent finding trees in the background
                 shear = 0, # trunks are cylindrical so shear is unlikely to have an effect
                 perspective = 0, # similar reasoning as shear
-                flipud = 0, # tree trunks always have a certain orientation coming out of the ground
 
 
 
@@ -267,15 +268,15 @@ def part4():
     """
     Part 4
 
-    In this part, you will need to develop a method to count the total number of trunks in the sequence of Evaluation Set images.
+    In this part, you will need to develop a method to count the total number of trunks in the sequence of Evaluation Set Images.
 
-    A portion of this will involve using your trained ML model to inference on the RGB images of the trunks in the EvaluationSetRGB folder, to detect the trunks.
+    A portion of this will involve using your trained ML model to inference on the RGB Images of the trunks in the EvaluationSetRGB folder, to detect the trunks.
 
-    Afterwards, your method must be able to count the number of unique trunks in the sequence of images, without undercounting or double-counting any given trunk.
+    Afterwards, your method must be able to count the number of unique trunks in the sequence of Images, without undercounting or double-counting any given trunk.
 
-    The result of this part should be one number, indicating the total number of trunks in the sequence of 49 images.
+    The result of this part should be one number, indicating the total number of trunks in the sequence of 49 Images.
 
-    In addition, output the inferences of your ML model on each of the 49 images, with the tree mask visible in translucent red, plotted on top of the original RGB image. On top of each mask, plot text indicating the unique ID of each tree. (i.e. if there are 20 unique trees in the sequence of 49 images, the first 4 images might all contain tree 1, the 5th image might contain tree 1 and tree 2, the next 5 images might only contain tree 2, etc. Plot the unique ID assigned to each tree on top of that tree's mask).
+    In addition, output the inferences of your ML model on each of the 49 Images, with the tree mask visible in translucent red, plotted on top of the original RGB image. On top of each mask, plot text indicating the unique ID of each tree. (i.e. if there are 20 unique trees in the sequence of 49 Images, the first 4 Images might all contain tree 1, the 5th image might contain tree 1 and tree 2, the next 5 Images might only contain tree 2, etc. Plot the unique ID assigned to each tree on top of that tree's mask).
     """
     # Count trunks here
 
@@ -283,7 +284,7 @@ def part4():
 
     # Print total number of trunks
 
-    # Display each of the 49 annotated images with masks in translucent red on top of the RGB image, and unique tree IDs on top of each detected mask
+    # Display each of the 49 annotated Images with masks in translucent red on top of the RGB image, and unique tree IDs on top of each detected mask
 
 def part5():
     """
@@ -322,7 +323,12 @@ Assume that the location of the first tree is (x, y) = (0 meters, 0 meters), and
 
 if __name__ == '__main__':
     # part1()
-    part2()
+    split_training_data(0.8)
+    # part2()
     # part3()
+    # print("torch:", torch.__version__)
+    # print("CUDA available:", torch.cuda.is_available())
+    # if torch.cuda.is_available():
+    #     print("Device:", torch.cuda.get_device_name(0))
     # part4()
     # part5()

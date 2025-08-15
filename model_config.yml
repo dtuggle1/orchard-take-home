@@ -1,4 +1,4 @@
-path: TrainingData
+path: Training Data
 train: train
 val: train
 nc: 1

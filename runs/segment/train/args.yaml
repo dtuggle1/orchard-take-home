@@ -3,8 +3,8 @@ mode: train
 model: yolov8n-seg.pt
 data:
   path: Training Data
-  train: images
-  val: images
+  train: Images
+  val: Images
   nc: 1
   names:
   - Trunk
