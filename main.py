@@ -28,6 +28,50 @@ EVALUATION_SET_DEPTH_FOLDER_LINK = "https://drive.google.com/drive/folders/1V_rZ
 EVALUATION_SET_RGB_FOLDER_NAME = 'EvaluationSetRGB'
 EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetDepth'
 
+BEST_MODEL = os.path.join('runs','segment','train35','weights','best.pt')
+TRAIN_MODEL = False
+
+class TrunkDetector:
+
+    def __init__(self):
+        self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
+
+    def train(self):
+        self.model.train(
+            data='model_config.yml',
+            seed=1,
+            deterministic=True,
+            epochs=600,
+            warmup_epochs=50,
+            patience=100,
+            conf=0.1,  # set this to be low because we can filter later with the depth data
+            iou=0.4,  # Help prevent overlaps
+
+            # Augmentations
+            degrees=20,  # how much it is anticipated to see trees with differing levels of rotation
+            translate=0.3,  # help with detecting partially visible tree trunks
+            fliplr=0.5,  # trees dont have a left/right orientation so adding this provides more good data
+            flipud=0,  # tree trunks always have a certain orientation coming out of the ground
+            hsv_h=0.1,  # allow for default hue adjustment because the lighting for the trees can vary
+            hsv_s=0.2,  # hu
+            hsv_v=0.3,  # allow brightness augmentation
+            scale=0.5,  # only looking for trees in the foreground, so keep this at a minimum
+            shear=2,  # camera angles aren't always perfect
+            perspective=0,  # similar reasoning as shear
+
+            mosaic=1,
+            mixup=0.1,
+            copy_paste=0.3,
+
+            # Learning params
+            lr0=0.01,  # set initial learning rate to high such that it converges faster
+            lrf=0.01,  # set final learning rate to 1/100 of lr0 for finer tuning and preventing overshoot
+            plots=True,
+
+            save_period=50
+
+        )
+
 
 def part1():
     IMAGE_INDEX = 25
@@ -151,47 +195,25 @@ def part2():
 
     # Below is where you write your code to train your ML model to predict masks on trunks
 
-    class TrunkDetector:
+    if TRAIN_MODEL:
+        detector = TrunkDetector()
+        detector.train()
+        model = detector.model
+    else:
+        model = YOLO(BEST_MODEL)
+    model.predictor.args.color_palette = 'red'
 
-        def __init__(self):
-            self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
+    if 'EvaluationSetOutputs' not in os.listdir():
+        os.mkdir('EvaluationSetOutputs')
 
-        def train(self):
-            self.model.train(
-                data = 'model_config.yml',
-                seed = 1,
-                deterministic = True,
-                epochs = 600,
-                warmup_epochs = 50,
-                fraction = 0.8, # 80/20 Test/train split
-
-                # Augmentations
-                degrees = 3, # how much it is anticipated to see trees with differing levels of rotation
-                translate = 0.5, # help with detecting partially visible tree trunks
-                fliplr = 0.5, # trees dont have a left/right orientation so adding this provides more good data
-                flipud = 0, # tree trunks always have a certain orientation coming out of the ground
-                hsv_h = 0,
-                hsv_s = 0,
-                hsv_v = 0,
-                scale = 0, # only looking for trees in the foreground, so disable this to help prevent finding trees in the background
-                shear = 0, # trunks are cylindrical so shear is unlikely to have an effect
-                perspective = 0, # similar reasoning as shear
+    for image in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME):
+        result = model.predict(
+            source=os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, image),
+            save=True
+        )
+        # cv2.imwrite(os.path.join('EvaluationSetOutputs',f'{image[:3]}_result'), result)
 
 
-
-                # Learning params
-                lr0 = 0.01, # set initial learning rate to high such that it converges faster
-                lrf = 0.05, # set final learning rate to 1/100 of lr0 for finer tuning and preventing overshoot
-
-                plots = True,
-
-                patience = 30, #
-                save_period = 50
-
-            )
-
-    model = TrunkDetector()
-    model.train()
 
 
 
@@ -207,19 +229,6 @@ def part2():
 
     # Get Yolo for image segmentation
 
-
-    # Train Model Here
-    def train():
-        model = None
-        return model
-
-    def evaluate():
-        # accuracy
-        # precision
-        # f1-score
-        # recall
-        return None
-
     # Add Post-processing to model
     def post_process(model, input_image):
         # loop through each identified tree trunk, and check for:
@@ -232,9 +241,10 @@ def part2():
 
     # Things I would do with more time
     # Detect ground/soil and verify that the the bottom of trunks are embedded in the
-    # ground. 
+    # ground.
+    return model
 
-def part3():
+def part3(model):
     """
     Part 3 In this part, you should provide a code block with inference code, where an input image can be pulled from the internet, be inferenced on, and output + display a result image with a semantically segmented mask of the detected trunk(s), which is displayed in the Colab notebook.
 
@@ -255,6 +265,7 @@ def part3():
     ### Run inference using your model here ###
     ml_inference_output = original_image
     # ml_inference_output should be the pixel-wise mask, with each pixel either (0, 0, 0) or (255, 255, 255) depending on whether it is part of a trunk mask
+    model.predict(ml_inference_output)
 
     # Save the image
     ml_inference_output.save('test_output_image.jpg')
@@ -323,8 +334,8 @@ Assume that the location of the first tree is (x, y) = (0 meters, 0 meters), and
 
 if __name__ == '__main__':
     # part1()
-    split_training_data(0.8)
-    # part2()
+    # split_training_data(0.8)
+    part2()
     # part3()
     # print("torch:", torch.__version__)
     # print("CUDA available:", torch.cuda.is_available())

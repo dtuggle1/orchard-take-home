@@ -59,6 +59,9 @@ def split_training_data(percentage_to_train):
         shutil.copy(os.path.join('Training Data', 'Labels', get_label_filename_from_training_image_filename(image_file)),
                     os.path.join('YoloTrainData','val','labels'))
 
+def get_depth_from_mask(image, contours):
+
+    pass
 
 
 
