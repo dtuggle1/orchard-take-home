@@ -63,7 +63,20 @@ def get_depth_from_mask(image, contours):
 
     pass
 
-
+def overlay_labels(image_folder, label_folder, output_folder):
+    """
+    Overlay the Labels on the training image for easier viewing
+    """
+    for image_file in os.listdir(image_folder):
+        training_image_path = os.path.join(image_folder, image_file)
+        training_image = cv2.imread(training_image_path)
+        training_image_label_filename = get_label_filename_from_training_image_filename(
+            image_file)
+        training_image_label_path = os.path.join(label_folder, training_image_label_filename)
+        masked_image = overlay_label(training_image_label_path, training_image, 0.4)
+        # Save the result
+        cv2.imwrite(os.path.join(output_folder, f"{image_file[:3]}_masked.jpg"),
+                                 masked_image)
 
 
 

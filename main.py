@@ -27,6 +27,12 @@ EVALUATION_SET_RGB_FOLDER_LINK = "https://drive.google.com/drive/folders/1Ua9R3p
 EVALUATION_SET_DEPTH_FOLDER_LINK = "https://drive.google.com/drive/folders/1V_rZAPt13EFp1k4ouwsSLj9_Fh9L_red?usp=drive_link"
 EVALUATION_SET_RGB_FOLDER_NAME = 'EvaluationSetRGB'
 EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetDepth'
+EVALUATION_SET_OUTPUTS_FOLDER_NAME = 'EvaluationSetOutputs'
+TRAINING_DATA_FOLDER_NAME = 'Training Data'
+MASKED_TRAINING_DATA_FOLDER_NAME = 'MaskedTrainingData'
+
+EVALUATE_EVALUATION_SET = True
+OVERLAY_LABELS_ON_TRAIN_DATA = True
 
 BEST_MODEL = os.path.join('runs','segment','train35','weights','best.pt')
 TRAIN_MODEL = False
@@ -165,35 +171,18 @@ def part2():
     #         os.rename(os.path.join('Training Data', 'Labels', file), os.path.join('Training Data', 'Labels', new_filename))
 
 
-    TRANSPARENCY_LEVEL = 0.4
-    MASKED_TRAINING_DATA_FOLDER = 'MaskedTrainingData'
-    if MASKED_TRAINING_DATA_FOLDER not in os.listdir():
-        os.mkdir(os.path.join(MASKED_TRAINING_DATA_FOLDER))
-
-    label_folder_path = os.path.join('Training Data', 'Labels')
-    training_image_folder_path = os.path.join('Training Data', 'Images')
-
-    # Overlay the Labels on the training image for easier viewing
-    # for image_file in os.listdir(training_image_folder_path):
-    #     training_image_path = os.path.join(training_image_folder_path, image_file)
-    #     training_image = cv2.imread(training_image_path)
-    #     training_image_label_filename = get_label_filename_from_training_image_filename(
-    #         image_file)
-    #     training_image_label_path = os.path.join(label_folder_path, training_image_label_filename)
-    #     overlay = copy.deepcopy(training_image)
-    #     masked_image = overlay_label(training_image_label_path, training_image, TRANSPARENCY_LEVEL)
-    #     # Save the result
-    #     cv2.imwrite(os.path.join(MASKED_TRAINING_DATA_FOLDER, f"{image_file[:3]}_masked.jpg"),
-    #                              masked_image)
-
-    # labelled_image = Image.open("test_mask.jpg")
-    # display(labelled_image)
-    
-    # for label_file in os.listdir('OriginalLabels'):
-    #     process_label_file(os.path.join('OriginalLabels', label_file), os.path.join('Training Data', 'Labels', label_file))
 
 
     # Below is where you write your code to train your ML model to predict masks on trunks
+
+    if OVERLAY_LABELS_ON_TRAIN_DATA:
+        if MASKED_TRAINING_DATA_FOLDER_NAME not in os.listdir():
+            os.mkdir(os.path.join(MASKED_TRAINING_DATA_FOLDER_NAME))
+
+        label_folder_path = os.path.join('Training Data', 'Labels')
+        training_image_folder_path = os.path.join('Training Data', 'Images')
+
+        overlay_labels(training_image_folder_path, label_folder_path, MASKED_TRAINING_DATA_FOLDER_NAME)
 
     if TRAIN_MODEL:
         detector = TrunkDetector()
@@ -201,17 +190,21 @@ def part2():
         model = detector.model
     else:
         model = YOLO(BEST_MODEL)
-    model.predictor.args.color_palette = 'red'
 
-    if 'EvaluationSetOutputs' not in os.listdir():
-        os.mkdir('EvaluationSetOutputs')
+    if EVALUATE_EVALUATION_SET:
+        if EVALUATION_SET_OUTPUTS_FOLDER_NAME in os.listdir():
+            shutil.rmtree(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
+        os.mkdir(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
 
-    for image in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME):
-        result = model.predict(
-            source=os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, image),
-            save=True
-        )
-        # cv2.imwrite(os.path.join('EvaluationSetOutputs',f'{image[:3]}_result'), result)
+        eval_images = []
+        for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME): #TODO: REMOVE, ONLY 3 FOR TESTING
+            eval_images.append(os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, eval_image_filename))
+        results = model(eval_images)
+        for result in results:
+            im = result.plot(txt_color=(0,0,255))
+            save_path = os.path.join(EVALUATION_SET_OUTPUTS_FOLDER_NAME, f"{result.path.split('\\')[1][:3]}_predict.jpg")
+            Image.fromarray(im).save(save_path)
+
 
 
 
