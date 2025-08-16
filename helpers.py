@@ -4,6 +4,50 @@ import os
 import random
 import shutil
 import torch
+from PIL import Image
+from ultralytics import YOLO
+import copy
+
+class TrunkDetector:
+
+    def __init__(self):
+        self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
+
+    def train(self):
+        self.model.train(
+            data='model_config.yml',
+            seed=1,
+            deterministic=True,
+            epochs=600,
+            warmup_epochs=50,
+            patience=100,
+            conf=0.1,  # set this to be low because we can filter later with the depth data
+            iou=0.4,  # Help prevent overlaps
+
+            # Augmentations
+            degrees=20,  # how much it is anticipated to see trees with differing levels of rotation
+            translate=0.3,  # help with detecting partially visible tree trunks
+            fliplr=0.5,  # trees dont have a left/right orientation so adding this provides more good data
+            flipud=0,  # tree trunks always have a certain orientation coming out of the ground
+            hsv_h=0.1,  # allow for default hue adjustment because the lighting for the trees can vary
+            hsv_s=0.2,  # hu
+            hsv_v=0.3,  # allow brightness augmentation
+            scale=0.5,  # only looking for trees in the foreground, so keep this at a minimum
+            shear=2,  # camera angles aren't always perfect
+            perspective=0,  # similar reasoning as shear
+
+            mosaic=1,
+            mixup=0.1,
+            copy_paste=0.3,
+
+            # Learning params
+            lr0=0.01,  # set initial learning rate to high such that it converges faster
+            lrf=0.01,  # set final learning rate to 1/100 of lr0 for finer tuning and preventing overshoot
+            plots=True,
+
+            save_period=50
+
+        )
 
 def get_depth_filename_from_image_filename(image_filename):
   return f"{image_filename[:3]}_depth.png"
@@ -60,10 +104,6 @@ def split_training_data(percentage_to_train):
         shutil.copy(os.path.join('Training Data', 'Labels', get_label_filename_from_training_image_filename(image_file)),
                     os.path.join('YoloTrainData','val','labels'))
 
-def get_depth_from_mask(image, contours):
-
-    pass
-
 def overlay_labels(image_folder, label_folder, output_folder):
     """
     Overlay the Labels on the training image for easier viewing
@@ -78,12 +118,6 @@ def overlay_labels(image_folder, label_folder, output_folder):
         # Save the result
         cv2.imwrite(os.path.join(output_folder, f"{image_file[:3]}_masked.jpg"),
                                  masked_image)
-
-def remove_overlaps(result):
-    pass
-
-def filter_by_depth(result):
-    pass
 
 def mask_overlaps(result):
     """
@@ -161,7 +195,6 @@ def remove_overlaps(result):
     result.boxes = result.boxes[best_masks]
     return result
 
-
 def apply_masks_to_depth_per_instance(result, depth_img):
     """
     Returns a list of masked depth images, one per instance.
@@ -181,8 +214,7 @@ def apply_masks_to_depth_per_instance(result, depth_img):
 
     return depth_masks
 
-def filter_by_depth(result, evaluation_set_depth_folder):
-    image_filename = result.path.split('\\')[1]
+def filter_by_depth(result, evaluation_set_depth_folder, image_filename):
     depth_image_filename = get_depth_filename_from_image_filename(image_filename)
     depth_img = cv2.imread(os.path.join(evaluation_set_depth_folder, depth_image_filename))
     if result.masks is not None:
@@ -214,3 +246,33 @@ def filter_by_depth(result, evaluation_set_depth_folder):
         result.masks = result.masks[keep_mask_indeces]
         result.boxes = result.boxes[keep_mask_indeces]
     return result
+
+def process_images(model, images, depth_folder_name=None, depth_filtering=False, save_folder=None):
+    results = model(images, conf=0.35)
+    output_images = []
+    output_results = []
+    for result in results:
+
+        # Remove overlaps
+        result = remove_overlaps(result)
+
+        # Filter by depth
+        if depth_filtering:
+            image_filename = result.path.split('\\')[1] #clean up
+            result = filter_by_depth(result, depth_folder_name, image_filename)
+
+        im = result.plot(txt_color=(0, 0, 255))
+        if save_folder:
+            image_filename = result.path.split('\\')[1] #clean up
+            save_path = os.path.join(save_folder, f"{image_filename[:3]}_predict.jpg")
+            Image.fromarray(im).save(save_path)
+        output_images.append(copy.deepcopy(im))
+        output_results.append(copy.deepcopy(results))
+    return output_images, output_results
+
+
+def generate_combined_mask(result):
+    masks = result.masks.data.cpu().numpy()
+    combined_mask = np.max(masks, axis=0).astype(np.uint8)
+    combined_mask = combined_mask * 255
+    return combined_mask

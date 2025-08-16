@@ -32,52 +32,14 @@ TRAINING_DATA_FOLDER_NAME = 'Training Data'
 MASKED_TRAINING_DATA_FOLDER_NAME = 'MaskedTrainingData'
 CONF_THRESH = .35
 
+SPLIT_TRAINING_DATA = True
 EVALUATE_EVALUATION_SET = True
 OVERLAY_LABELS_ON_TRAIN_DATA = True
 
 BEST_MODEL = os.path.join('runs','segment','train35','weights','best.pt')
 TRAIN_MODEL = False
 
-class TrunkDetector:
 
-    def __init__(self):
-        self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
-
-    def train(self):
-        self.model.train(
-            data='model_config.yml',
-            seed=1,
-            deterministic=True,
-            epochs=600,
-            warmup_epochs=50,
-            patience=100,
-            conf=0.1,  # set this to be low because we can filter later with the depth data
-            iou=0.4,  # Help prevent overlaps
-
-            # Augmentations
-            degrees=20,  # how much it is anticipated to see trees with differing levels of rotation
-            translate=0.3,  # help with detecting partially visible tree trunks
-            fliplr=0.5,  # trees dont have a left/right orientation so adding this provides more good data
-            flipud=0,  # tree trunks always have a certain orientation coming out of the ground
-            hsv_h=0.1,  # allow for default hue adjustment because the lighting for the trees can vary
-            hsv_s=0.2,  # hu
-            hsv_v=0.3,  # allow brightness augmentation
-            scale=0.5,  # only looking for trees in the foreground, so keep this at a minimum
-            shear=2,  # camera angles aren't always perfect
-            perspective=0,  # similar reasoning as shear
-
-            mosaic=1,
-            mixup=0.1,
-            copy_paste=0.3,
-
-            # Learning params
-            lr0=0.01,  # set initial learning rate to high such that it converges faster
-            lrf=0.01,  # set final learning rate to 1/100 of lr0 for finer tuning and preventing overshoot
-            plots=True,
-
-            save_period=50
-
-        )
 
 
 def part1():
@@ -162,18 +124,6 @@ def part2():
 
     ### MY CODE BELOW
 
-    # for file in os.listdir(os.path.join('Training Data', 'Images')):
-    #     if '_rgb' in file:
-    #         new_filename = f"{file[:3]}.jpg"
-    #         os.rename(os.path.join('Training Data', 'Images', file), os.path.join('Training Data', 'Images', new_filename))
-    # for file in os.listdir(os.path.join('Training Data', 'Labels')):
-    #     if '_label' in file:
-    #         new_filename = f"{file[:3]}.txt"
-    #         os.rename(os.path.join('Training Data', 'Labels', file), os.path.join('Training Data', 'Labels', new_filename))
-
-
-
-
     # Below is where you write your code to train your ML model to predict masks on trunks
 
     if OVERLAY_LABELS_ON_TRAIN_DATA:
@@ -198,34 +148,10 @@ def part2():
         os.mkdir(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
 
         eval_images = []
-        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[:1]: #TODO: REMOVE, ONLY 3 FOR TESTING
-        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[4:5]: #TODO: REMOVE, ONLY 3 FOR TESTING
-        for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME): #TODO: REMOVE, ONLY 3 FOR TESTING
+        for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME):
             eval_images.append(os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, eval_image_filename))
 
-
-        results = model(eval_images, conf=CONF_THRESH) #todo: refactor
-        for result in results:
-            # print(image_filename)
-            # Remove overlaps
-            result = remove_overlaps(result)
-
-            # Filter by depth
-            result = filter_by_depth(result, EVALUATION_SET_DEPTH_FOLDER_NAME)
-
-
-            # depth_masks = apply_masks_to_depth_per_instance(result, depth_img)
-            # for depth_mask in depth_masks:
-            #     cv2.imshow("Masked Depth", depth_mask)
-
-
-
-
-            im = result.plot(txt_color=(0,0,255))
-            save_path = os.path.join(EVALUATION_SET_OUTPUTS_FOLDER_NAME, f"{image_filename[:3]}_predict.jpg")
-            Image.fromarray(im).save(save_path)
-            print()
-
+        output_images = process_images(model, eval_images, save_folder=EVALUATION_SET_OUTPUTS_FOLDER_NAME)
 
     # Things I would do with more time
     # Detect ground/soil and verify that the the bottom of trunks are embedded in the
@@ -247,21 +173,20 @@ def part3(model):
 
     # Fetch the image
     response = requests.get(url)
-    original_image = cv2.imread(BytesIO(response.content))
+    original_image = Image.open(BytesIO(response.content))
 
 
     ### Run inference using your model here ###
-    ml_inference_output = original_image
     # ml_inference_output should be the pixel-wise mask, with each pixel either (0, 0, 0) or (255, 255, 255) depending on whether it is part of a trunk mask
-    model.predict(ml_inference_output)
+    output_images, output_results = process_images(model, original_image)
 
     # Save the image
-    ml_inference_output.save('test_output_image.jpg')
+    ml_inference_output = generate_combined_mask(output_results[0][0])
     print("ML Inference Output Image:")
-    cv2.show(ml_inference_output)
+    # Image.show(ml_inference_output)
 
     # Save the image
-    ml_inference_output.save('ml_inference_output.jpg')
+    cv2.imwrite('ml_inference_output_image.jpg',ml_inference_output)
 
 def part4():
     """
@@ -322,9 +247,10 @@ Assume that the location of the first tree is (x, y) = (0 meters, 0 meters), and
 
 if __name__ == '__main__':
     # part1()
-    # split_training_data(0.8)
-    part2()
-    # part3()
+    # if SPLIT_TRAINING_DATA:
+    #     split_training_data(0.8)
+    # part2()
+    part3(YOLO(BEST_MODEL))
     # print("torch:", torch.__version__)
     # print("CUDA available:", torch.cuda.is_available())
     # if torch.cuda.is_available():
