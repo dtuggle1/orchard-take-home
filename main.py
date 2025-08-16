@@ -36,7 +36,7 @@ EVALUATE_EVALUATION_SET = True
 OVERLAY_LABELS_ON_TRAIN_DATA = True
 
 BEST_MODEL = os.path.join('runs','segment','train35','weights','best.pt')
-TRAIN_MODEL = True
+TRAIN_MODEL = False
 
 class TrunkDetector:
 
@@ -55,7 +55,7 @@ class TrunkDetector:
             iou=0.4,  # Help prevent overlaps
 
             # Augmentations
-            degrees=10,  # how much it is anticipated to see trees with differing levels of rotation
+            degrees=20,  # how much it is anticipated to see trees with differing levels of rotation
             translate=0.3,  # help with detecting partially visible tree trunks
             fliplr=0.5,  # trees dont have a left/right orientation so adding this provides more good data
             flipud=0,  # tree trunks always have a certain orientation coming out of the ground
@@ -199,36 +199,24 @@ def part2():
 
         eval_images = []
         # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[:1]: #TODO: REMOVE, ONLY 3 FOR TESTING
-        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[16:17]: #TODO: REMOVE, ONLY 3 FOR TESTING
+        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[4:5]: #TODO: REMOVE, ONLY 3 FOR TESTING
         for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME): #TODO: REMOVE, ONLY 3 FOR TESTING
             eval_images.append(os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, eval_image_filename))
 
 
         results = model(eval_images, conf=CONF_THRESH) #todo: refactor
         for result in results:
-            image_filename = result.path.split('\\')[1]
-
+            # print(image_filename)
             # Remove overlaps
             result = remove_overlaps(result)
 
-
             # Filter by depth
-            depth_image_filename = get_depth_filename_from_image_filename(image_filename)
-            depth_img = cv2.imread(os.path.join(EVALUATION_SET_DEPTH_FOLDER_NAME, depth_image_filename))
-            if result.masks is not None:
-                for mask in result.masks.data:
-                    binary_mask = mask.cpu().numpy()
-                    binary_mask = cv2.resize(binary_mask, (1200,1920), interpolation=cv2.INTER_NEAREST)
-                    mask_out = (binary_mask * 255).astype('uint8')
-                    cv2.imwrite('test.png', mask_out)
+            result = filter_by_depth(result, EVALUATION_SET_DEPTH_FOLDER_NAME)
 
-                    masked_depth = depth_img.astype(np.int32)
-                    masked_depth[binary_mask==0] = -1
-                    print()
 
-                # depth_masks = apply_masks_to_depth_per_instance(result, depth_img)
-                # for depth_mask in depth_masks:
-                #     cv2.imshow("Masked Depth", depth_mask)
+            # depth_masks = apply_masks_to_depth_per_instance(result, depth_img)
+            # for depth_mask in depth_masks:
+            #     cv2.imshow("Masked Depth", depth_mask)
 
 
 

@@ -180,3 +180,37 @@ def apply_masks_to_depth_per_instance(result, depth_img):
         depth_masks.append(masked_depth)
 
     return depth_masks
+
+def filter_by_depth(result, evaluation_set_depth_folder):
+    image_filename = result.path.split('\\')[1]
+    depth_image_filename = get_depth_filename_from_image_filename(image_filename)
+    depth_img = cv2.imread(os.path.join(evaluation_set_depth_folder, depth_image_filename))
+    if result.masks is not None:
+        keep_mask_indeces = []
+        for i, mask in enumerate(result.masks.data):
+            binary_mask = mask.cpu().numpy()
+            binary_mask = cv2.resize(binary_mask, (1200, 1920), interpolation=cv2.INTER_NEAREST)
+            mask_out = (binary_mask * 255).astype('uint8')
+            cv2.imwrite('test.png', mask_out)
+
+            masked_depth = depth_img.astype(float)
+            masked_depth[binary_mask == 0] = np.nan
+            masked_depth = masked_depth[:, :, 0]
+            median = np.nanmedian(masked_depth)
+            p1 = np.nanpercentile(masked_depth, 1)
+            p25 = np.nanpercentile(masked_depth, 25)
+            p75 = np.nanpercentile(masked_depth, 75)
+            p99 = np.nanpercentile(masked_depth, 99)
+            mean = np.nanmean(masked_depth)
+            std = np.nanstd(masked_depth)
+            max = np.nanmax(masked_depth)
+            min = np.nanmin(masked_depth)
+            conf = result.boxes.conf[i]
+            # print(f"{image_filename},{i},{conf},{median},{mean},{std},{max},{min},{p1},{p25},{p75},{p99}")
+            p99_p1_range = p99 - p1
+            cv2.imwrite('masked_depth.png', masked_depth)
+            if (conf > 0.5) or (p99_p1_range > 7):
+                keep_mask_indeces.append(i)
+        result.masks = result.masks[keep_mask_indeces]
+        result.boxes = result.boxes[keep_mask_indeces]
+    return result
