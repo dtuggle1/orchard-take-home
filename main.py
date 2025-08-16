@@ -13,6 +13,7 @@ import copy
 from PIL import Image
 from ultralytics import YOLO
 import torch
+import pickle
 
 evaluation_set_rgb_folder_link = "https://drive.google.com/drive/folders/1Ua9R3pC5HZdiUKPGdoCpS_MKmy6O4_-p?usp=drive_link"
 
@@ -28,12 +29,13 @@ EVALUATION_SET_DEPTH_FOLDER_LINK = "https://drive.google.com/drive/folders/1V_rZ
 EVALUATION_SET_RGB_FOLDER_NAME = 'EvaluationSetRGB'
 EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetDepth'
 EVALUATION_SET_OUTPUTS_FOLDER_NAME = 'EvaluationSetOutputs'
+P4_OUTPUTS_FOLDER_NAME = 'P4Outputs'
 TRAINING_DATA_FOLDER_NAME = 'Training Data'
 MASKED_TRAINING_DATA_FOLDER_NAME = 'MaskedTrainingData'
 CONF_THRESH = .35
 
 SPLIT_TRAINING_DATA = True
-EVALUATE_EVALUATION_SET = True
+EVALUATE_EVALUATION_SET_P2 = True
 OVERLAY_LABELS_ON_TRAIN_DATA = True
 
 BEST_MODEL = os.path.join('runs','segment','train35','weights','best.pt')
@@ -142,7 +144,7 @@ def part2():
     else:
         model = YOLO(BEST_MODEL)
 
-    if EVALUATE_EVALUATION_SET:
+    if EVALUATE_EVALUATION_SET_P2:
         if EVALUATION_SET_OUTPUTS_FOLDER_NAME in os.listdir():
             shutil.rmtree(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
         os.mkdir(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
@@ -151,12 +153,13 @@ def part2():
         for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME):
             eval_images.append(os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, eval_image_filename))
 
-        output_images = process_images(model, eval_images, save_folder=EVALUATION_SET_OUTPUTS_FOLDER_NAME)
+        output_images, output_results = process_images(model, eval_images, save_folder=EVALUATION_SET_OUTPUTS_FOLDER_NAME)
+
 
     # Things I would do with more time
     # Detect ground/soil and verify that the the bottom of trunks are embedded in the
     # ground.
-    return model
+    return output_images, output_results
 
 def part3(model):
     """
@@ -188,7 +191,7 @@ def part3(model):
     # Save the image
     cv2.imwrite('ml_inference_output_image.jpg',ml_inference_output)
 
-def part4():
+def part4(results):
     """
     Part 4
 
@@ -202,7 +205,48 @@ def part4():
 
     In addition, output the inferences of your ML model on each of the 49 Images, with the tree mask visible in translucent red, plotted on top of the original RGB image. On top of each mask, plot text indicating the unique ID of each tree. (i.e. if there are 20 unique trees in the sequence of 49 Images, the first 4 Images might all contain tree 1, the 5th image might contain tree 1 and tree 2, the next 5 Images might only contain tree 2, etc. Plot the unique ID assigned to each tree on top of that tree's mask).
     """
+    frames_comparison = 10
     # Count trunks here
+    for result in results:
+        if len(result) < 1:
+            continue
+        result.masks.sizes = []
+        result.masks.centroids = []
+        result.masks.ids = []
+
+        for mask in result.masks.data:
+            centroid = mask_centroid(mask)
+            result.masks.centroids.append(centroid)
+            result.masks.sizes.append(np.sum(mask.cpu().numpy()))
+
+    for i, result in enumerate(results): #loop through results
+        for j, mask in enumerate(result.masks.data): #loop through each mask of each result
+            for k in range(frames_comparison): #looping through the subsequent frames
+                centroid = result.masks.centroids[j]
+                size = result.masks.sizes[j]
+                compared_frame_idx = i+k+1
+                if compared_frame_idx > len(results)-1:
+                    continue
+                comparison_result = results[compared_frame_idx]
+                for l, comparison_result_mask in enumerate(comparison_result.masks.data):
+                    # size - make sure the masks are of similar size
+                    size_similarity = size/comparison_result.masks.sizes[l]
+
+                    # shape
+                    shape_score = shape_similarity(mask, comparison_result_mask)
+
+                    # location - make sure the centroid y position is within X pixels of previous
+                    y_distance = centroid[1] - comparison_result.masks.centroids[l][1]
+                    x_distance = centroid[0] - comparison_result.masks.centroids[l][0]
+                    print()
+
+
+
+
+
+
+
+
 
 
 
@@ -249,11 +293,11 @@ if __name__ == '__main__':
     # part1()
     # if SPLIT_TRAINING_DATA:
     #     split_training_data(0.8)
-    # part2()
-    part3(YOLO(BEST_MODEL))
-    # print("torch:", torch.__version__)
-    # print("CUDA available:", torch.cuda.is_available())
-    # if torch.cuda.is_available():
-    #     print("Device:", torch.cuda.get_device_name(0))
-    # part4()
+    # output_images, output_results = part2()
+    # with open("p2_output_results.pkl", "wb") as f:
+    #     pickle.dump(output_results, f)
+    # part3(YOLO(BEST_MODEL))
+    with open("p2_output_results.pkl", "rb") as f:
+        output_results = pickle.load(f)
+    part4(output_results)
     # part5()

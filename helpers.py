@@ -214,32 +214,65 @@ def apply_masks_to_depth_per_instance(result, depth_img):
 
     return depth_masks
 
+
+def shape_similarity(mask1, mask2):
+    # FUNCTION WRITTEN BY AI. Asked to build me a metric that compares shapes of two masks
+    mask1 = mask1.cpu().numpy()
+    mask2 = mask2.cpu().numpy()
+    c1, _ = cv2.findContours(mask1.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    c2, _ = cv2.findContours(mask2.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if not c1 or not c2:
+        return None
+
+    return cv2.matchShapes(c1[0], c2[0], cv2.CONTOURS_MATCH_I1, 0.0)
+
+def mask_centroid(mask):
+    # FUNCTION WRITTEN BY AI
+    # mask should be 2D, with 1s where the object is
+    mask = mask.detach().cpu().numpy()
+    ys, xs = np.nonzero(mask)  # get coordinates of all positive pixels
+    if len(xs) == 0:  # avoid division by zero
+        return None
+    cx = np.mean(xs)
+    cy = np.mean(ys)
+    return (cx, cy)
+
+def get_depth_mask(mask, depth_img,resize=False):
+    binary_mask = mask.cpu().numpy()
+    if resize:
+        binary_mask = cv2.resize(binary_mask, (1200, 1920), interpolation=cv2.INTER_NEAREST)
+
+    masked_depth = depth_img.astype(float)
+    masked_depth[binary_mask == 0] = np.nan
+    masked_depth = masked_depth[:, :, 0]
+    return masked_depth
+
+def calc_depth_mask_metrics(masked_depth):
+    metrics = {
+        'median': np.nanmedian(masked_depth),
+        'p1': np.nanpercentile(masked_depth, 1),
+        'p25': np.nanpercentile(masked_depth, 25),
+        'p75': np.nanpercentile(masked_depth, 75),
+        'p99': np.nanpercentile(masked_depth, 99),
+        'mean': np.nanmean(masked_depth),
+        'std': np.nanstd(masked_depth),
+        'max': np.nanmax(masked_depth),
+        'min': np.nanmin(masked_depth)
+    }
+    return metrics
+
 def filter_by_depth(result, evaluation_set_depth_folder, image_filename):
     depth_image_filename = get_depth_filename_from_image_filename(image_filename)
     depth_img = cv2.imread(os.path.join(evaluation_set_depth_folder, depth_image_filename))
     if result.masks is not None:
         keep_mask_indeces = []
         for i, mask in enumerate(result.masks.data):
-            binary_mask = mask.cpu().numpy()
-            binary_mask = cv2.resize(binary_mask, (1200, 1920), interpolation=cv2.INTER_NEAREST)
-            mask_out = (binary_mask * 255).astype('uint8')
-            cv2.imwrite('test.png', mask_out)
-
-            masked_depth = depth_img.astype(float)
-            masked_depth[binary_mask == 0] = np.nan
-            masked_depth = masked_depth[:, :, 0]
-            median = np.nanmedian(masked_depth)
-            p1 = np.nanpercentile(masked_depth, 1)
-            p25 = np.nanpercentile(masked_depth, 25)
-            p75 = np.nanpercentile(masked_depth, 75)
-            p99 = np.nanpercentile(masked_depth, 99)
-            mean = np.nanmean(masked_depth)
-            std = np.nanstd(masked_depth)
-            max = np.nanmax(masked_depth)
-            min = np.nanmin(masked_depth)
+            masked_depth = get_depth_mask(mask, depth_img,resize=False)
+            masked_depth_metrics = calc_depth_mask_metrics(masked_depth)
             conf = result.boxes.conf[i]
             # print(f"{image_filename},{i},{conf},{median},{mean},{std},{max},{min},{p1},{p25},{p75},{p99}")
-            p99_p1_range = p99 - p1
+            p99_p1_range = masked_depth_metrics['p99'] - masked_depth_metrics['p1']
             cv2.imwrite('masked_depth.png', masked_depth)
             if (conf > 0.5) or (p99_p1_range > 7):
                 keep_mask_indeces.append(i)
@@ -267,7 +300,7 @@ def process_images(model, images, depth_folder_name=None, depth_filtering=False,
             save_path = os.path.join(save_folder, f"{image_filename[:3]}_predict.jpg")
             Image.fromarray(im).save(save_path)
         output_images.append(copy.deepcopy(im))
-        output_results.append(copy.deepcopy(results))
+        output_results.append(copy.deepcopy(result))
     return output_images, output_results
 
 
