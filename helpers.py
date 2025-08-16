@@ -160,3 +160,23 @@ def remove_overlaps(result):
     result.masks = result.masks[best_masks]
     result.boxes = result.boxes[best_masks]
     return result
+
+
+def apply_masks_to_depth_per_instance(result, depth_img):
+    """
+    Returns a list of masked depth images, one per instance.
+    Pixels outside each mask are set to invalid_value.
+    """
+    if result.masks is None:
+        return []
+
+    depth_masks = []
+    for pts in result.masks.xy:  # pixel coordinates in original size
+        mask = np.zeros(depth_img.shape[:2], np.uint8)
+        cv2.fillPoly(mask, [pts.astype(np.int32)], 1)
+
+        masked_depth = depth_img.copy()
+        masked_depth[mask == 0] = 255
+        depth_masks.append(masked_depth)
+
+    return depth_masks

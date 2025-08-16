@@ -36,7 +36,7 @@ EVALUATE_EVALUATION_SET = True
 OVERLAY_LABELS_ON_TRAIN_DATA = True
 
 BEST_MODEL = os.path.join('runs','segment','train35','weights','best.pt')
-TRAIN_MODEL = False
+TRAIN_MODEL = True
 
 class TrunkDetector:
 
@@ -55,7 +55,7 @@ class TrunkDetector:
             iou=0.4,  # Help prevent overlaps
 
             # Augmentations
-            degrees=20,  # how much it is anticipated to see trees with differing levels of rotation
+            degrees=10,  # how much it is anticipated to see trees with differing levels of rotation
             translate=0.3,  # help with detecting partially visible tree trunks
             fliplr=0.5,  # trees dont have a left/right orientation so adding this provides more good data
             flipud=0,  # tree trunks always have a certain orientation coming out of the ground
@@ -198,53 +198,46 @@ def part2():
         os.mkdir(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
 
         eval_images = []
-        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[:3]: #TODO: REMOVE, ONLY 3 FOR TESTING
-        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[34:35]: #TODO: REMOVE, ONLY 3 FOR TESTING
+        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[:1]: #TODO: REMOVE, ONLY 3 FOR TESTING
+        # for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME)[16:17]: #TODO: REMOVE, ONLY 3 FOR TESTING
         for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME): #TODO: REMOVE, ONLY 3 FOR TESTING
             eval_images.append(os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, eval_image_filename))
-        results = model(eval_images)
+
+
+        results = model(eval_images, conf=CONF_THRESH) #todo: refactor
         for result in results:
-            # AI WROTE THE BELOW 3 LINES. I asked it to filter predictions for me based on a confidence threshold
-            if result.masks is not None:
-                result.masks = result.masks[result.boxes.conf > CONF_THRESH]
-            result.boxes = result.boxes[result.boxes.conf > CONF_THRESH]
+            image_filename = result.path.split('\\')[1]
 
             # Remove overlaps
             result = remove_overlaps(result)
 
+
             # Filter by depth
+            depth_image_filename = get_depth_filename_from_image_filename(image_filename)
+            depth_img = cv2.imread(os.path.join(EVALUATION_SET_DEPTH_FOLDER_NAME, depth_image_filename))
+            if result.masks is not None:
+                for mask in result.masks.data:
+                    binary_mask = mask.cpu().numpy()
+                    binary_mask = cv2.resize(binary_mask, (1200,1920), interpolation=cv2.INTER_NEAREST)
+                    mask_out = (binary_mask * 255).astype('uint8')
+                    cv2.imwrite('test.png', mask_out)
+
+                    masked_depth = depth_img.astype(np.int32)
+                    masked_depth[binary_mask==0] = -1
+                    print()
+
+                # depth_masks = apply_masks_to_depth_per_instance(result, depth_img)
+                # for depth_mask in depth_masks:
+                #     cv2.imshow("Masked Depth", depth_mask)
+
+
+
 
             im = result.plot(txt_color=(0,0,255))
-            save_path = os.path.join(EVALUATION_SET_OUTPUTS_FOLDER_NAME, f"{result.path.split('\\')[1][:3]}_predict.jpg")
+            save_path = os.path.join(EVALUATION_SET_OUTPUTS_FOLDER_NAME, f"{image_filename[:3]}_predict.jpg")
             Image.fromarray(im).save(save_path)
             print()
 
-
-
-
-
-
-
-    # Augment the image data
-    # Small rotation - use case is for trees which should always be vertical,
-    # although the camera may be mounted on an angled surface. Also limiting this
-    # will help filter out fallen branches
-    # Brightness - vary depending on day
-    # Occlusion - we will see this at farms with things in front of the trees
-    # Jitter - different tractors/farms/grounds will be bumpy in different ways
-    # Defocus - trees will be at varying depths, not always in focus
-
-    # Get Yolo for image segmentation
-
-    # Add Post-processing to model
-    def post_process(model, input_image):
-        # loop through each identified tree trunk, and check for:
-        # verticality
-        # aspect ratio
-        # tree diameter using the depths and filter out any within X mm
-        #
-
-        return None
 
     # Things I would do with more time
     # Detect ground/soil and verify that the the bottom of trunks are embedded in the
