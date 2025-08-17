@@ -1,3 +1,4 @@
+import pandas as pd
 from torch.backends.cudnn import deterministic
 
 [ ]
@@ -191,34 +192,24 @@ def part3(model):
     # Save the image
     cv2.imwrite('ml_inference_output_image.jpg',ml_inference_output)
 
-def part4(results):
+def group_masks(results, direction=None, determine_direction=False):
     """
-    Part 4
-
-    In this part, you will need to develop a method to count the total number of trunks in the sequence of Evaluation Set Images.
-
-    A portion of this will involve using your trained ML model to inference on the RGB Images of the trunks in the EvaluationSetRGB folder, to detect the trunks.
-
-    Afterwards, your method must be able to count the number of unique trunks in the sequence of Images, without undercounting or double-counting any given trunk.
-
-    The result of this part should be one number, indicating the total number of trunks in the sequence of 49 Images.
-
-    In addition, output the inferences of your ML model on each of the 49 Images, with the tree mask visible in translucent red, plotted on top of the original RGB image. On top of each mask, plot text indicating the unique ID of each tree. (i.e. if there are 20 unique trees in the sequence of 49 Images, the first 4 Images might all contain tree 1, the 5th image might contain tree 1 and tree 2, the next 5 Images might only contain tree 2, etc. Plot the unique ID assigned to each tree on top of that tree's mask).
+    if direction is True, output the final outputs
+    if determine_direction is True, run a rough matching process (without the direction), and the median direction of the True labels will determine the direction of the cameras
     """
+    if direction and determine_direction:
+        raise ValueError('Cannot both determine the direction and use direction for final outputs')
+    if not direction and not determine_direction:
+        raise ValueError('Must be ')
     frames_comparison = 10
-    # Count trunks here
-    for result in results:
-        if len(result) < 1:
-            continue
-        result.masks.sizes = []
-        result.masks.centroids = []
-        result.masks.ids = []
+    true_x_distances = []
 
-        for mask in result.masks.data:
-            centroid = mask_centroid(mask)
-            result.masks.centroids.append(centroid)
-            result.masks.sizes.append(np.sum(mask.cpu().numpy()))
-    idx = 0
+    pairing_table = {
+        'result idx': [],
+        'result mask idx': [],
+        'comparison result idx': [],
+        'comparison result mask idx': [],
+    }
     for i, result in enumerate(results): #loop through results
         if len(result)<1:
             continue
@@ -247,15 +238,9 @@ def part4(results):
                     # location - make sure the centroid y position is within X pixels of previous
                     y_distance = centroid[1] - comparison_result.masks.centroids[l][1]
                     x_distance = centroid[0] - comparison_result.masks.centroids[l][0]
-                    # print(f'size similarity: {size_similarity}')
-                    # print(f'shape score: {shape_score}')
-                    # print(f'y distance: {y_distance}')
-                    # print(f'x distance: {x_distance}')
                     frames_ahead = k+1
                     x_distance_per_frame = abs(x_distance/frames_ahead)
                     match = True
-                    if x_distance > 0:
-                        match = False
                     if x_distance_per_frame > 75:
                         match = False
                     if x_distance_per_frame < 45:
@@ -264,14 +249,104 @@ def part4(results):
                         match = False
                     if shape_score*size_similarity >40:
                         match = False
+                    if direction:
+                        if direction == 'Left':
+                            if x_distance > 0:
+                                match = False
+                        elif direction == 'Right':
+                            if x_distance < 0:
+                                match = False
+                        else:
+                            raise ValueError(f'Direction can not be {direction}, can only be one of Positive or Negative')
 
-                    # print(f"img{result.path.split('\\')[1][:3]}; {result.boxes[j].conf[0]}; img{comparison_result.path.split('\\')[1][:3]}; {comparison_result.boxes[l].conf[0]};{size_similarity};{shape_score};{y_distance};{x_distance}")
-                    # print(abs(x_distance/frames_ahead))
-                    # print(idx)
-                    # idx+=1
-                    #
-                    print(match)
-                    # print()
+                    if determine_direction:
+                        if match:
+                            true_x_distances.append(x_distance)
+                    elif direction:
+                        if match:
+                            pairing_table['result idx'].append(i)
+                            pairing_table['result mask idx'].append(j)
+                            pairing_table['comparison result idx'].append(compared_frame_idx)
+                            pairing_table['comparison result mask idx'].append(l)
+
+
+    if determine_direction:
+        true_x_distances_arr = np.array(true_x_distances)
+        median_true_x_distance = np.median(true_x_distances_arr)
+        if median_true_x_distance < 0:
+            return 'Left'
+        else:
+            return 'Right'
+    elif direction:
+        pairing_table = pd.DataFrame.from_dict(pairing_table)
+        return pairing_table
+
+
+def part4(results):
+    """
+    Part 4
+
+    In this part, you will need to develop a method to count the total number of trunks in the sequence of Evaluation Set Images.
+
+    A portion of this will involve using your trained ML model to inference on the RGB Images of the trunks in the EvaluationSetRGB folder, to detect the trunks.
+
+    Afterwards, your method must be able to count the number of unique trunks in the sequence of Images, without undercounting or double-counting any given trunk.
+
+    The result of this part should be one number, indicating the total number of trunks in the sequence of 49 Images.
+
+    In addition, output the inferences of your ML model on each of the 49 Images, with the tree mask visible in translucent red, plotted on top of the original RGB image. On top of each mask, plot text indicating the unique ID of each tree. (i.e. if there are 20 unique trees in the sequence of 49 Images, the first 4 Images might all contain tree 1, the 5th image might contain tree 1 and tree 2, the next 5 Images might only contain tree 2, etc. Plot the unique ID assigned to each tree on top of that tree's mask).
+    """
+    # Count trunks here
+    # for result in results:
+    #     if len(result) < 1:
+    #         continue
+    #     result.masks.sizes = []
+    #     result.masks.centroids = []
+    #     result.masks.ids = []
+    #
+    #     for mask in result.masks.data:
+    #         centroid = mask_centroid(mask)
+    #         result.masks.centroids.append(centroid)
+    #         result.masks.sizes.append(np.sum(mask.cpu().numpy()))
+    # camera_direction = group_masks(results, determine_direction=True)
+    # print(f'Determined Camera Direction: {camera_direction}')
+    # pairing_table = group_masks(results, direction=camera_direction)
+    # pairing_table.to_csv('pairing_table.csv')
+    tree_idx = 0
+    pairing_table = pd.read_csv('pairing_table.csv')
+    groups = []
+    for i, row in pairing_table.iterrows():
+        val1 = (int(row['result idx']), int(row['result mask idx']))
+        val2 = (int(row['comparison result idx']), int(row['comparison result mask idx']))
+        if i == 0:
+            groups.append([])
+            groups[0].append(val1)
+            groups[0].append(val2)
+            continue
+        found_group = False
+        for group in groups:
+            if val1 in group:
+                found_group = True
+                if val2 not in group:
+                    group.append(val2)
+                break
+        if not found_group:
+            groups.append([])
+            groups[-1].append(val1)
+            groups[-1].append(val2)
+
+    for result in results:
+        if len(result) < 1:
+            continue
+
+
+
+
+    print(groups)
+
+
+
+
 
 
 
