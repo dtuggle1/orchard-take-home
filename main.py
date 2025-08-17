@@ -16,6 +16,25 @@ from ultralytics import YOLO
 import torch
 import pickle
 
+
+from ultralytics.utils.plotting import Colors
+colors = Colors()
+for i,color in enumerate(Colors().palette):
+    color = (0,0,255)
+print()
+# Code taken from AI to change ultralytics to plot only red
+# from ultralytics.utils.plotting import colors
+#
+# # Monkey patch the colors function to always return red
+# def red_only_colors(i, bgr=False):
+#     """Return red color for any class index"""
+#     return (0, 0, 255) if bgr else (255, 0, 0)
+
+# Temporarily override the colors function
+# original_colors = colors
+# import ultralytics.utils.plotting
+# ultralytics.utils.plotting.colors = red_only_colors
+
 evaluation_set_rgb_folder_link = "https://drive.google.com/drive/folders/1Ua9R3pC5HZdiUKPGdoCpS_MKmy6O4_-p?usp=drive_link"
 
 
@@ -192,96 +211,6 @@ def part3(model):
     # Save the image
     cv2.imwrite('ml_inference_output_image.jpg',ml_inference_output)
 
-def group_masks(results, direction=None, determine_direction=False):
-    """
-    if direction is True, output the final outputs
-    if determine_direction is True, run a rough matching process (without the direction), and the median direction of the True labels will determine the direction of the cameras
-    """
-    if direction and determine_direction:
-        raise ValueError('Cannot both determine the direction and use direction for final outputs')
-    if not direction and not determine_direction:
-        raise ValueError('Must be ')
-    frames_comparison = 10
-    true_x_distances = []
-
-    pairing_table = {
-        'result idx': [],
-        'result mask idx': [],
-        'comparison result idx': [],
-        'comparison result mask idx': [],
-    }
-    for i, result in enumerate(results): #loop through results
-        if len(result)<1:
-            continue
-        for j, mask in enumerate(result.masks.data): #loop through each mask of each result
-            for k in range(frames_comparison): #looping through the subsequent frames
-                centroid = result.masks.centroids[j]
-                size = result.masks.sizes[j]
-                compared_frame_idx = i+k+1
-                if compared_frame_idx > len(results)-1:
-                    continue
-                comparison_result = results[compared_frame_idx]
-                if len(comparison_result) < 1:
-                    continue
-                for l, comparison_result_mask in enumerate(comparison_result.masks.data):
-                    # print(f"orig: img{result.path.split('\\')[1][:3]}, mask_conf: {result.boxes[j].conf[0]}")
-                    # print(f"compare: img{comparison_result.path.split('\\')[1][:3]}, mask_conf: {comparison_result.boxes[l].conf[0]}")
-
-                    # size - make sure the masks are of similar size
-                    size_similarity = size/comparison_result.masks.sizes[l]
-                    if size_similarity < 1:
-                        size_similarity = 1/size_similarity #make sure this is always greater than 1, so lower scores are better
-
-                    # shape
-                    shape_score = shape_similarity(mask, comparison_result_mask)
-
-                    # location - make sure the centroid y position is within X pixels of previous
-                    y_distance = centroid[1] - comparison_result.masks.centroids[l][1]
-                    x_distance = centroid[0] - comparison_result.masks.centroids[l][0]
-                    frames_ahead = k+1
-                    x_distance_per_frame = abs(x_distance/frames_ahead)
-                    match = True
-                    if x_distance_per_frame > 75:
-                        match = False
-                    if x_distance_per_frame < 45:
-                        match = False
-                    if abs(y_distance) > 150:
-                        match = False
-                    if shape_score*size_similarity >40:
-                        match = False
-                    if direction:
-                        if direction == 'Left':
-                            if x_distance > 0:
-                                match = False
-                        elif direction == 'Right':
-                            if x_distance < 0:
-                                match = False
-                        else:
-                            raise ValueError(f'Direction can not be {direction}, can only be one of Positive or Negative')
-
-                    if determine_direction:
-                        if match:
-                            true_x_distances.append(x_distance)
-                    elif direction:
-                        if match:
-                            pairing_table['result idx'].append(i)
-                            pairing_table['result mask idx'].append(j)
-                            pairing_table['comparison result idx'].append(compared_frame_idx)
-                            pairing_table['comparison result mask idx'].append(l)
-
-
-    if determine_direction:
-        true_x_distances_arr = np.array(true_x_distances)
-        median_true_x_distance = np.median(true_x_distances_arr)
-        if median_true_x_distance < 0:
-            return 'Left'
-        else:
-            return 'Right'
-    elif direction:
-        pairing_table = pd.DataFrame.from_dict(pairing_table)
-        return pairing_table
-
-
 def part4(results):
     """
     Part 4
@@ -297,21 +226,21 @@ def part4(results):
     In addition, output the inferences of your ML model on each of the 49 Images, with the tree mask visible in translucent red, plotted on top of the original RGB image. On top of each mask, plot text indicating the unique ID of each tree. (i.e. if there are 20 unique trees in the sequence of 49 Images, the first 4 Images might all contain tree 1, the 5th image might contain tree 1 and tree 2, the next 5 Images might only contain tree 2, etc. Plot the unique ID assigned to each tree on top of that tree's mask).
     """
     # Count trunks here
-    # for result in results:
-    #     if len(result) < 1:
-    #         continue
-    #     result.masks.sizes = []
-    #     result.masks.centroids = []
-    #     result.masks.ids = []
-    #
-    #     for mask in result.masks.data:
-    #         centroid = mask_centroid(mask)
-    #         result.masks.centroids.append(centroid)
-    #         result.masks.sizes.append(np.sum(mask.cpu().numpy()))
-    # camera_direction = group_masks(results, determine_direction=True)
-    # print(f'Determined Camera Direction: {camera_direction}')
-    # pairing_table = group_masks(results, direction=camera_direction)
-    # pairing_table.to_csv('pairing_table.csv')
+    for result in results:
+        if len(result) < 1:
+            continue
+        result.masks.sizes = []
+        result.masks.centroids = []
+        result.masks.ids = []
+
+        for mask in result.masks.data:
+            centroid = mask_centroid(mask)
+            result.masks.centroids.append(centroid)
+            result.masks.sizes.append(np.sum(mask.cpu().numpy()))
+    camera_direction = group_masks(results, determine_direction=True)
+    print(f'Determined Camera Direction: {camera_direction}')
+    pairing_table = group_masks(results, direction=camera_direction)
+    pairing_table.to_csv('pairing_table.csv')
     tree_idx = 0
     pairing_table = pd.read_csv('pairing_table.csv')
     groups = []
@@ -335,9 +264,53 @@ def part4(results):
             groups[-1].append(val1)
             groups[-1].append(val2)
 
-    for result in results:
+    # special logic for last image because if a trunk appears, it is impossible for it to be part of a group
+    for j,mask in enumerate(results[-1].masks.data):
+        mask_id = (len(results)-1,j)
+        mask_id_in_a_group = False
+        for group in groups:
+            if mask_id in group:
+                mask_id_in_a_group = True
+        if not mask_id_in_a_group:
+            groups.append([mask_id])
+
+
+    for i, result in enumerate(results):
         if len(result) < 1:
             continue
+        result.label_ids = []
+        keep_mask_indeces = []
+        for j, mask in enumerate(result.masks.data):
+            mask_id = (i,j)
+            for k, group in enumerate(groups):
+                if mask_id in group:
+                    result.boxes.cls[j] = k
+                    keep_mask_indeces.append(j)
+                    continue
+
+        result.masks = result.masks[keep_mask_indeces]
+        result.boxes = result.boxes[keep_mask_indeces]
+    class_labels = {}
+    for i,group in enumerate(groups):
+        class_labels[i] = f"Trunk_{i}"
+    if P4_OUTPUTS_FOLDER_NAME in os.listdir():
+        shutil.rmtree(P4_OUTPUTS_FOLDER_NAME)
+    os.mkdir(P4_OUTPUTS_FOLDER_NAME)
+    for result in results:
+        result.names = class_labels
+        if len(result) < 1:
+            continue
+        im = result.plot(
+            conf=False,
+            labels=True,
+        )
+        image_filename = result.path.split('\\')[1]  # clean up
+        save_path = os.path.join(P4_OUTPUTS_FOLDER_NAME, f"{image_filename[:3]}_predict.jpg")
+        Image.fromarray(im).save(save_path)
+        print()
+
+
+    print()
 
 
 

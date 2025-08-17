@@ -7,6 +7,7 @@ import torch
 from PIL import Image
 from ultralytics import YOLO
 import copy
+import pandas as pd
 
 class TrunkDetector:
 
@@ -273,7 +274,7 @@ def filter_by_depth(result, evaluation_set_depth_folder, image_filename):
             conf = result.boxes.conf[i]
             # print(f"{image_filename},{i},{conf},{median},{mean},{std},{max},{min},{p1},{p25},{p75},{p99}")
             p99_p1_range = masked_depth_metrics['p99'] - masked_depth_metrics['p1']
-            cv2.imwrite('masked_depth.png', masked_depth)
+            # cv2.imwrite('masked_depth.png', masked_depth)
             if (conf > 0.5) or (p99_p1_range > 7):
                 keep_mask_indeces.append(i)
         result.masks = result.masks[keep_mask_indeces]
@@ -309,3 +310,115 @@ def generate_combined_mask(result):
     combined_mask = np.max(masks, axis=0).astype(np.uint8)
     combined_mask = combined_mask * 255
     return combined_mask
+
+
+def group_masks(results, direction=None, determine_direction=False):
+    """
+    if direction is True, output the final outputs
+    if determine_direction is True, run a rough matching process (without the direction), and the median direction of the True labels will determine the direction of the cameras
+    """
+    if direction and determine_direction:
+        raise ValueError('Cannot both determine the direction and use direction for final outputs')
+    if not direction and not determine_direction:
+        raise ValueError('Must be ')
+    frames_comparison = 8
+    true_x_distances = []
+
+    pairing_table = {
+        'result idx': [],
+        'result mask idx': [],
+        'comparison result idx': [],
+        'comparison result mask idx': [],
+    }
+    debug_table = {
+        'result idx': [],
+        'result mask idx': [],
+        'comparison result idx': [],
+        'comparison result mask idx': [],
+        'x distance': [],
+        'y distance': [],
+        'x distance per frame': [],
+        'shape * similarity': [],
+    }
+    for i, result in enumerate(results): #loop through results
+        if len(result)<1:
+            continue
+        for j, mask in enumerate(result.masks.data): #loop through each mask of each result
+            for k in range(frames_comparison): #looping through the subsequent frames
+                centroid = result.masks.centroids[j]
+                size = result.masks.sizes[j]
+                compared_frame_idx = i+k+1
+                if compared_frame_idx > len(results)-1:
+                    continue
+                comparison_result = results[compared_frame_idx]
+                if len(comparison_result) < 1:
+                    continue
+                for l, comparison_result_mask in enumerate(comparison_result.masks.data):
+                    # print(f"orig: img{result.path.split('\\')[1][:3]}, mask_conf: {result.boxes[j].conf[0]}")
+                    # print(f"compare: img{comparison_result.path.split('\\')[1][:3]}, mask_conf: {comparison_result.boxes[l].conf[0]}")
+
+                    # size - make sure the masks are of similar size
+                    size_similarity = size/comparison_result.masks.sizes[l]
+                    if size_similarity < 1:
+                        size_similarity = 1/size_similarity #make sure this is always greater than 1, so lower scores are better
+
+                    # shape
+                    shape_score = shape_similarity(mask, comparison_result_mask)
+
+                    # location - make sure the centroid y position is within X pixels of previous
+                    y_distance = centroid[1] - comparison_result.masks.centroids[l][1]
+                    x_distance = centroid[0] - comparison_result.masks.centroids[l][0]
+                    frames_ahead = k+1
+                    x_distance_per_frame = abs(x_distance/frames_ahead)
+
+                    debug_table['result idx'].append(i)
+                    debug_table['result mask idx'].append(j)
+                    debug_table['comparison result idx'].append(compared_frame_idx)
+                    debug_table['comparison result mask idx'].append(l)
+                    debug_table['x distance'].append(x_distance)
+                    debug_table['y distance'].append(y_distance)
+                    debug_table['x distance per frame'].append(x_distance_per_frame)
+                    debug_table['shape * similarity'].append(shape_score*size_similarity)
+
+                    match = True
+                    if x_distance_per_frame > 80:
+                        match = False
+                    if x_distance_per_frame < 40:
+                        match = False
+                    if abs(y_distance) > 150:
+                        match = False
+                    if shape_score*size_similarity >50:
+                        match = False
+                    if direction:
+                        if direction == 'Left':
+                            if x_distance > 0:
+                                match = False
+                        elif direction == 'Right':
+                            if x_distance < 0:
+                                match = False
+                        else:
+                            raise ValueError(f'Direction can not be {direction}, can only be one of Positive or Negative')
+
+                    if determine_direction:
+                        if match:
+                            true_x_distances.append(x_distance)
+                    elif direction:
+                        if match:
+                            pairing_table['result idx'].append(i)
+                            pairing_table['result mask idx'].append(j)
+                            pairing_table['comparison result idx'].append(compared_frame_idx)
+                            pairing_table['comparison result mask idx'].append(l)
+    debug_table_df = pd.DataFrame.from_dict(debug_table)
+    debug_table_df.to_csv('debug_table.csv')
+
+
+    if determine_direction:
+        true_x_distances_arr = np.array(true_x_distances)
+        median_true_x_distance = np.median(true_x_distances_arr)
+        if median_true_x_distance < 0:
+            return 'Left'
+        else:
+            return 'Right'
+    elif direction:
+        pairing_table = pd.DataFrame.from_dict(pairing_table)
+        return pairing_table
