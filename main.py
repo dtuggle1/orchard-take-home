@@ -50,6 +50,7 @@ EVALUATION_SET_RGB_FOLDER_NAME = 'EvaluationSetRGB'
 EVALUATION_SET_DEPTH_FOLDER_NAME = 'EvaluationSetDepth'
 EVALUATION_SET_OUTPUTS_FOLDER_NAME = 'EvaluationSetOutputs'
 P4_OUTPUTS_FOLDER_NAME = 'P4Outputs'
+P4_LABELS_FOLDER_NAME = 'P4Labels'
 TRAINING_DATA_FOLDER_NAME = 'Training Data'
 MASKED_TRAINING_DATA_FOLDER_NAME = 'MaskedTrainingData'
 CONF_THRESH = .35
@@ -275,10 +276,13 @@ def part4(results):
             groups.append([mask_id])
 
 
+    class_labels = {}
+    for i,group in enumerate(groups):
+        class_labels[i] = f"Trunk_{i}"
+
     for i, result in enumerate(results):
         if len(result) < 1:
             continue
-        result.label_ids = []
         keep_mask_indeces = []
         for j, mask in enumerate(result.masks.data):
             mask_id = (i,j)
@@ -290,46 +294,138 @@ def part4(results):
 
         result.masks = result.masks[keep_mask_indeces]
         result.boxes = result.boxes[keep_mask_indeces]
-    class_labels = {}
-    for i,group in enumerate(groups):
-        class_labels[i] = f"Trunk_{i}"
+
+    # save the labels to a folder
     if P4_OUTPUTS_FOLDER_NAME in os.listdir():
         shutil.rmtree(P4_OUTPUTS_FOLDER_NAME)
     os.mkdir(P4_OUTPUTS_FOLDER_NAME)
-    for result in results:
-        result.names = class_labels
+
+    def place_label_safely(image, text, x, y, font, font_scale, thickness, bg_color=(255, 255, 255),
+                           text_color=(0, 0, 0)):
+        """Place a label with background that stays within image bounds"""
+        img_h, img_w = image.shape[:2]
+
+        # Get text dimensions
+        (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+
+        padding = 5
+
+        # Try different positions in order of preference
+        positions = [
+            # Above the object
+            (x, y - text_height - 10),
+            # Below the object
+            (x, y + 50),
+            # Left side
+            (max(5, x - text_width - 20), y),
+            # Right side
+            (x + 20, y),
+            # Top-left corner as fallback
+            (10, text_height + 10),
+        ]
+
+        for label_x, label_y in positions:
+            # Calculate background rectangle coordinates
+            bg_x1 = label_x - padding
+            bg_y1 = label_y - text_height - padding
+            bg_x2 = label_x + text_width + padding
+            bg_y2 = label_y + baseline + padding
+
+            # Check if this position fits within image bounds
+            if (bg_x1 >= 0 and bg_y1 >= 0 and bg_x2 <= img_w and bg_y2 <= img_h):
+                # Draw background rectangle
+                cv2.rectangle(image, (int(bg_x1), int(bg_y1)), (int(bg_x2), int(bg_y2)), bg_color, -1)
+
+                # Draw text (coordinates should align with background)
+                cv2.putText(image, text, (int(label_x), int(label_y)), font, font_scale, text_color, thickness)
+                return
+
+        # Fallback: force it in the top-left corner with proper alignment
+        label_x = 10
+        label_y = text_height + 10
+        bg_x1 = 5
+        bg_y1 = 5
+        bg_x2 = min(img_w - 5, text_width + 15)
+        bg_y2 = min(img_h - 5, text_height + 15)
+
+        cv2.rectangle(image, (bg_x1, bg_y1), (bg_x2, bg_y2), bg_color, -1)
+        cv2.putText(image, text, (label_x, label_y), font, font_scale, text_color, thickness)
+
+    # Alternative simpler version that's more reliable:
+
+
+    # Use the simpler version in your main code:
+    for i, result in enumerate(results):
         if len(result) < 1:
             continue
-        im = result.plot(
-            conf=False,
-            labels=True,
-        )
-        image_filename = result.path.split('\\')[1]  # clean up
-        save_path = os.path.join(P4_OUTPUTS_FOLDER_NAME, f"{image_filename[:3]}_predict.jpg")
-        Image.fromarray(im).save(save_path)
-        print()
+        original_image = cv2.imread(result.path)
+        output_image = original_image.copy()
 
+        for j, mask in enumerate(result.masks.data):
+            if hasattr(result.masks, 'xy') and len(result.masks.xy) > j:
+                polygon = result.masks.xy[j]
 
-    print()
+                if len(polygon) > 0:
+                    # Your existing polygon processing code...
+                    polygon = polygon.astype(np.float32)
 
+                    valid_mask = (
+                            np.isfinite(polygon).all(axis=1) &
+                            (polygon[:, 0] >= 0) & (polygon[:, 0] < output_image.shape[1]) &
+                            (polygon[:, 1] >= 0) & (polygon[:, 1] < output_image.shape[0])
+                    )
+                    polygon = polygon[valid_mask]
 
+                    if len(polygon) < 3:
+                        continue
 
+                    polygon = polygon[~np.all(np.diff(polygon, axis=0, prepend=polygon[-1:]) == 0, axis=1)]
 
-    print(groups)
+                    if len(polygon) < 3:
+                        continue
 
+                    polygon = polygon.astype(np.int32)
+                    polygon[:, 0] = np.clip(polygon[:, 0], 0, output_image.shape[1] - 1)
+                    polygon[:, 1] = np.clip(polygon[:, 1], 0, output_image.shape[0] - 1)
 
+                    if len(np.unique(polygon, axis=0)) < 3:
+                        continue
 
+                    try:
+                        mask_img = np.zeros((output_image.shape[0], output_image.shape[1]), dtype=np.uint8)
+                        cv2.fillPoly(mask_img, [polygon], 255)
 
+                        if np.sum(mask_img) == 0:
+                            continue
 
+                        color = (0, 0, 255)
+                        alpha = 0.4
 
+                        # Apply overlay using original image for consistent translucency
+                        mask_indices = mask_img == 255
+                        output_image[mask_indices] = (
+                                original_image[mask_indices] * (1 - alpha) +
+                                np.array(color) * alpha
+                        ).astype(np.uint8)
 
+                        # Draw contours
+                        contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        if contours:
+                            cv2.drawContours(output_image, contours, -1, color, 2)
 
+                            # Add label with the simpler function
+                            x, y, w, h = cv2.boundingRect(contours[0])
+                            label = class_labels[int(result.boxes.cls[j].cpu().numpy())]
 
+                            place_label_simple(output_image, label, x, y,
+                                               cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
 
+                    except Exception as e:
+                        print(f"Error processing polygon for mask {j}: {e}")
+                        continue
 
-
-
-
+        cv2.imwrite(os.path.join(P4_OUTPUTS_FOLDER_NAME, f"{result.path.split('\\')[1][:3]}_p4output.jpg"),
+                    output_image)
 
     # Print total number of trunks
 
@@ -374,11 +470,11 @@ if __name__ == '__main__':
     # part1()
     # if SPLIT_TRAINING_DATA:
     #     split_training_data(0.8)
-    output_images, output_results = part2()
+    # output_images, output_results = part2()
     # with open("p2_output_results.pkl", "wb") as f:
     #     pickle.dump(output_results, f)
     # part3(YOLO(BEST_MODEL))
-    # with open("p2_output_results.pkl", "rb") as f:
-    #     output_results = pickle.load(f)
+    with open("p2_output_results.pkl", "rb") as f:
+        output_results = pickle.load(f)
     part4(output_results)
     # part5()

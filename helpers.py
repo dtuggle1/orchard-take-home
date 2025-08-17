@@ -452,3 +452,53 @@ def group_masks(results, direction=None, determine_direction=False):
     elif direction:
         pairing_table = pd.DataFrame.from_dict(pairing_table)
         return pairing_table
+
+def place_label_simple(image, text, x, y, font, font_scale, thickness, bg_color=(255, 255, 255),
+                       text_color=(0, 0, 0)):
+    """
+    FUNCTION WRITTEN BY AI
+    Simple label placement that ensures text stays in rectangle"""
+    img_h, img_w = image.shape[:2]
+
+    # Get text dimensions
+    (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+
+    padding = 5
+    total_width = text_width + 2 * padding
+    total_height = text_height + 2 * padding
+
+    # Default position (above the object)
+    label_x = x
+    label_y = y - 10
+
+    # Adjust if going off edges
+    if label_x + total_width > img_w:
+        label_x = img_w - total_width
+    if label_x < 0:
+        label_x = 0
+
+    if label_y - total_height < 0:
+        label_y = y + 40  # Place below instead
+
+    if label_y > img_h:
+        label_y = img_h - 10
+
+    # Calculate background rectangle
+    bg_x1 = label_x
+    bg_y1 = label_y - text_height - padding
+    bg_x2 = label_x + text_width + 2 * padding
+    bg_y2 = label_y + padding
+
+    # Ensure background stays in bounds
+    bg_x1 = max(0, min(bg_x1, img_w - total_width))
+    bg_x2 = min(img_w, bg_x1 + total_width)
+    bg_y1 = max(0, min(bg_y1, img_h - total_height))
+    bg_y2 = min(img_h, bg_y1 + total_height)
+
+    # Draw background
+    cv2.rectangle(image, (int(bg_x1), int(bg_y1)), (int(bg_x2), int(bg_y2)), bg_color, -1)
+
+    # Draw text centered in the background
+    text_x = bg_x1 + padding
+    text_y = bg_y1 + text_height + padding
+    cv2.putText(image, text, (int(text_x), int(text_y)), font, font_scale, text_color, thickness)
