@@ -281,6 +281,32 @@ def filter_by_depth(result, evaluation_set_depth_folder, image_filename):
         result.boxes = result.boxes[keep_mask_indeces]
     return result
 
+def remove_nearby_predictions(result):
+    if result.masks is not None:
+        keep_mask_indeces = list(range(len(result.masks.data)))
+        cxs = []
+        for i, mask in enumerate(result.masks.data):
+            cx, cy = mask_centroid(mask)
+            cxs.append(cx)
+        if len(cxs) > 1:
+            indeces_to_remove = []
+            for i, cx in enumerate(cxs):
+                for j in range(i+1,len(cxs)):
+                    if abs(cx-cxs[j]) < 100:
+                        conf_i = result.boxes.conf[i]
+                        conf_j = result.boxes.conf[j]
+                        if conf_i > conf_j:
+                            indeces_to_remove.append(j)
+                        else:
+                            indeces_to_remove.append(i)
+            for index_to_remove in indeces_to_remove:
+                if index_to_remove in keep_mask_indeces:
+                    keep_mask_indeces.remove(index_to_remove)
+
+        result.masks = result.masks[keep_mask_indeces]
+        result.boxes = result.boxes[keep_mask_indeces]
+    return result
+
 def process_images(model, images, depth_folder_name=None, depth_filtering=False, save_folder=None):
     results = model(images, conf=0.35)
     output_images = []
@@ -289,6 +315,10 @@ def process_images(model, images, depth_folder_name=None, depth_filtering=False,
 
         # Remove overlaps
         result = remove_overlaps(result)
+
+        # Remove predictions that are close to each other
+        result = remove_nearby_predictions(result)
+
 
         # Filter by depth
         if depth_filtering:

@@ -374,11 +374,11 @@ if __name__ == '__main__':
     # part1()
     # if SPLIT_TRAINING_DATA:
     #     split_training_data(0.8)
-    # output_images, output_results = part2()
+    output_images, output_results = part2()
     # with open("p2_output_results.pkl", "wb") as f:
     #     pickle.dump(output_results, f)
     # part3(YOLO(BEST_MODEL))
-    with open("p2_output_results.pkl", "rb") as f:
-        output_results = pickle.load(f)
+    # with open("p2_output_results.pkl", "rb") as f:
+    #     output_results = pickle.load(f)
     part4(output_results)
     # part5()
