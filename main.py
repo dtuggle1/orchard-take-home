@@ -218,8 +218,10 @@ def part4(results):
             centroid = mask_centroid(mask)
             result.masks.centroids.append(centroid)
             result.masks.sizes.append(np.sum(mask.cpu().numpy()))
-
+    idx = 0
     for i, result in enumerate(results): #loop through results
+        if len(result)<1:
+            continue
         for j, mask in enumerate(result.masks.data): #loop through each mask of each result
             for k in range(frames_comparison): #looping through the subsequent frames
                 centroid = result.masks.centroids[j]
@@ -228,9 +230,16 @@ def part4(results):
                 if compared_frame_idx > len(results)-1:
                     continue
                 comparison_result = results[compared_frame_idx]
+                if len(comparison_result) < 1:
+                    continue
                 for l, comparison_result_mask in enumerate(comparison_result.masks.data):
+                    # print(f"orig: img{result.path.split('\\')[1][:3]}, mask_conf: {result.boxes[j].conf[0]}")
+                    # print(f"compare: img{comparison_result.path.split('\\')[1][:3]}, mask_conf: {comparison_result.boxes[l].conf[0]}")
+
                     # size - make sure the masks are of similar size
                     size_similarity = size/comparison_result.masks.sizes[l]
+                    if size_similarity < 1:
+                        size_similarity = 1/size_similarity #make sure this is always greater than 1, so lower scores are better
 
                     # shape
                     shape_score = shape_similarity(mask, comparison_result_mask)
@@ -238,7 +247,31 @@ def part4(results):
                     # location - make sure the centroid y position is within X pixels of previous
                     y_distance = centroid[1] - comparison_result.masks.centroids[l][1]
                     x_distance = centroid[0] - comparison_result.masks.centroids[l][0]
-                    print()
+                    # print(f'size similarity: {size_similarity}')
+                    # print(f'shape score: {shape_score}')
+                    # print(f'y distance: {y_distance}')
+                    # print(f'x distance: {x_distance}')
+                    frames_ahead = k+1
+                    x_distance_per_frame = abs(x_distance/frames_ahead)
+                    match = True
+                    if x_distance > 0:
+                        match = False
+                    if x_distance_per_frame > 75:
+                        match = False
+                    if x_distance_per_frame < 45:
+                        match = False
+                    if abs(y_distance) > 150:
+                        match = False
+                    if shape_score*size_similarity >40:
+                        match = False
+
+                    # print(f"img{result.path.split('\\')[1][:3]}; {result.boxes[j].conf[0]}; img{comparison_result.path.split('\\')[1][:3]}; {comparison_result.boxes[l].conf[0]};{size_similarity};{shape_score};{y_distance};{x_distance}")
+                    # print(abs(x_distance/frames_ahead))
+                    # print(idx)
+                    # idx+=1
+                    #
+                    print(match)
+                    # print()
 
 
 
