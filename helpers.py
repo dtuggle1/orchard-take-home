@@ -10,36 +10,72 @@ import copy
 import pandas as pd
 
 class TrunkDetector:
+    """
+    Trunk Detector model using transfer learning and Yolov8 as the base model. Yolov8 instance segmentation task.
+    Looking at state of the art instance segmentation models, Mask R-CNN and Yolov8-seg both could work for this use
+    case. Mask R-CNN could provide more accurate results, but likely at the cost of being more computationally heavy.
+    Yolov8 is still highly accurate, but simpler architecture, and given the 1 week constraints of this project and
+    the limited compute power, Yolov8-seg was chosen. Additionally the nano version of Yolo ,Yolov8n, was chosen as
+    I trained the model using my own compute resources (I did not use colab), and wanted the faster training and
+    thus iteration time given the constraints. Additionally, the labels are already in Yolov8 format
+    (Yolov5 is forward compatible with Yolov8), thus making Yolov8 a good choice.
 
+    Only 30 training images were available, so consideration had to be taken to train with the limited dataset. The most
+    obvious and easy solution was to augment the data, and this was done through the Yolo architecture, and the
+    augmentations were done in such a way that would best replicate real world scenarios. In this case, the only
+    scenario considered was that this model would be used for the evaluation set and an "unseen test set", so the
+    augmentations were considered from the images in the evaluation set. See comments next to the augmentations in the
+    model to see the rationales behind each. The augmentations were also output as part of the model and reviewed to
+    confirm that they were matching with reality; for example, initially hue and saturation were set to be quite high,
+    and this caused the augmented images to have lighting that was very unlikely to be reflected in the test set,
+    evaluation set, or unseen test set. There were some augmentations that were added for model robustness (as opposed)
+    to just mimicking the test set, as the environments of the trunks can vary. The augmentations were tuned as part
+    model tuning.
+
+    With only 30 training images, they were split into a standard 80/20 split into training and testing, resulting in
+    only 6 images used for testing. Special considerations were taken as with only 6 images in the test set, the risk
+    of the model not being generalizable was high. To counteract this, k-folds cross validation was also considered,
+    as cross this would have allowed the model to both train and test on the whole dataset, reducing the risk of
+    poor generalization. This was ultimately not implemented due to estimated project scope. K-folds cross validation
+    unforuntately isn't natively built into Yolo, but Yolo does provide documentation on how to implement it:
+    https://docs.ultralytics.com/guides/kfold-cross-validation/.
+
+    Various hyperparameters were tuned as part of the model tuning process. Given that there were additional filtering
+    steps that were available given the domain space of this task, as well as the depth data, the model was tuned for
+    high recall to try to capture all the available tree trunks, then post-processing was done to filter out the
+    false positives. Accordingly so, the confidence was set to be quite conservative.
+
+
+    """
     def __init__(self):
         self.model = YOLO('yolov8n-seg.pt')  # initialize self.model to be yolo8 seg
 
     def train(self):
         self.model.train(
             data='model_config.yml',
-            seed=1,
-            deterministic=True,
-            epochs=600,
-            warmup_epochs=50,
-            patience=100,
-            conf=0.1,  # set this to be low because we can filter later with the depth data
-            iou=0.4,  # Help prevent overlaps
+            seed=1, # ensure reproducibility
+            deterministic=True, # ensure reproducibility
+            epochs=600, # set this to be high, but given the patience param, it typically quit well before 600
+            warmup_epochs=50, # help prevent overtraining on early training data
+            patience=100, # The performance plateaued significantly after around 120 epochs, thus setting the patience to 100 allowed ample epochs for there to be no additional learning before stopping the training.
+            conf=0.35,  # set this to be low because we can filter later with the depth data
+            iou=0.4,  # The trees are set to be far apart and in the foreground so very unlikely to be overlapping with each other, thus intersection over union was set to be low
 
             # Augmentations
-            degrees=20,  # how much it is anticipated to see trees with differing levels of rotation
-            translate=0.3,  # help with detecting partially visible tree trunks
-            fliplr=0.5,  # trees dont have a left/right orientation so adding this provides more good data
-            flipud=0,  # tree trunks always have a certain orientation coming out of the ground
-            hsv_h=0.1,  # allow for default hue adjustment because the lighting for the trees can vary
-            hsv_s=0.2,  # hu
-            hsv_v=0.3,  # allow brightness augmentation
-            scale=0.5,  # only looking for trees in the foreground, so keep this at a minimum
+            degrees=20,  # Trunks are vertical, setting this to too high would cause more horizontal branches and objects to be classified, so this was set to be low
+            translate=0.3,  # Set higher than default to help detect partially visible tree trunks, but too low and it would start to detect more branches
+            fliplr=0.5,  # tree trunks don't have an orientation horizontally so this was set to be high
+            flipud=0,  # tree trunks always come out of the ground, so flipping the images would not make sense
+            hsv_h=0.1,  # some hue adjustments to allow for various lighting conditions of the trees
+            hsv_s=0.2,  # light saturation adjustments to allow for some color varation of different environments
+            hsv_v=0.3,  # allow brightness augmentation as the lighting for the trunks may differ
+            scale=0.5,  # only looking for trees in the foreground, so keep this at a minimum, as setting this to be too high would find more branches, thick poles, or trunks in the background
             shear=2,  # camera angles aren't always perfect
             perspective=0,  # similar reasoning as shear
 
-            mosaic=1,
-            mixup=0.1,
-            copy_paste=0.3,
+            mosaic=1, # This is beneficial for finding occluded trunks or trunks at the edge of the frame, somewhat similar to translate
+            mixup=0.1, # Allows for blended composite images, adding robustness, but was done minimally as it does not reflect real life scenario too much.
+            copy_paste=0.3, # Allows for more training label instances in different environments
 
             # Learning params
             lr0=0.01,  # set initial learning rate to high such that it converges faster

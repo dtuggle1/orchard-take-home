@@ -2,18 +2,13 @@ import pandas as pd
 from torch.backends.cudnn import deterministic
 
 [ ]
-import os
 from download import *
-import cv2
-import numpy as np
 import requests
 from io import BytesIO
 import matplotlib.pyplot as plt
 from helpers import *
-import copy
 from PIL import Image
 from ultralytics import YOLO
-import torch
 import pickle
 
 
