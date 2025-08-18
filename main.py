@@ -52,11 +52,12 @@ CONF_THRESH = .35
 
 SPLIT_TRAINING_DATA = True
 EVALUATE_EVALUATION_SET_P2 = True
-OVERLAY_LABELS_ON_TRAIN_DATA = True
+OVERLAY_LABELS_ON_TRAIN_DATA = False
 
 BEST_MODEL = os.path.join('runs','segment','train35','weights','best.pt')
-TRAIN_MODEL = False
+TRAIN_MODEL = True
 
+OUTPUT_P4_PAIRING_TABLE = False
 
 
 
@@ -145,8 +146,7 @@ def part2():
     # Below is where you write your code to train your ML model to predict masks on trunks
 
     if OVERLAY_LABELS_ON_TRAIN_DATA:
-        if MASKED_TRAINING_DATA_FOLDER_NAME not in os.listdir():
-            os.mkdir(os.path.join(MASKED_TRAINING_DATA_FOLDER_NAME))
+        empty_and_create_folder(MASKED_TRAINING_DATA_FOLDER_NAME)
 
         label_folder_path = os.path.join('Training Data', 'Labels')
         training_image_folder_path = os.path.join('Training Data', 'Images')
@@ -161,10 +161,6 @@ def part2():
         model = YOLO(BEST_MODEL)
 
     if EVALUATE_EVALUATION_SET_P2:
-        if EVALUATION_SET_OUTPUTS_FOLDER_NAME in os.listdir():
-            shutil.rmtree(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
-        os.mkdir(EVALUATION_SET_OUTPUTS_FOLDER_NAME)
-
         eval_images = []
         for eval_image_filename in os.listdir(EVALUATION_SET_RGB_FOLDER_NAME):
             eval_images.append(os.path.join(EVALUATION_SET_RGB_FOLDER_NAME, eval_image_filename))
@@ -202,79 +198,102 @@ def part3(model):
     # Save the image
     ml_inference_output = generate_combined_mask(output_results[0][0])
     print("ML Inference Output Image:")
-    # Image.show(ml_inference_output)
+    Image.show(ml_inference_output)
 
     # Save the image
     cv2.imwrite('ml_inference_output_image.jpg',ml_inference_output)
 
 def part4(results):
     """
-    Part 4
+    Multiple methods were considered for this. The images can be considered frames of a video, so the obvious solution
+    would have been to use a video tracking algorithm. That was explored, but ultimately not used as the images are
+    spaced so far apart, it is difficult for a video tracking algorithm to track consistently. Instead, rules based on
+    the masks, comparing them to masks of subsequent images was determined and tuned. Also, the predictions already
+    exist, and this seemed more straightforward than tuning a video tracking model.
 
-    In this part, you will need to develop a method to count the total number of trunks in the sequence of Evaluation Set Images.
+    NOTE: this method makes an assumption - which is that the camera is moving in a singular direction and
+    at a mostly constant speed.
 
-    A portion of this will involve using your trained ML model to inference on the RGB Images of the trunks in the EvaluationSetRGB folder, to detect the trunks.
+    We know that similar trunks of different frames should:
+    - appear within the subsequent frames
+    - y position should not vary significantly as the camera is moving horizontally and the trunks are static
+    - x position of a trunk should be changing either all negatively or positively as the camera is only moving one direction.
+    - x position of a trunk should be changing at a relatively constant rate because the vehicle that the camera is
+    mounted to is moving at a constant speed
+    - the shape and size of the trunk should not vary significantly across frames as they are static objects and it
+    is unlikely for a new occlusion to occur (e.g. a branch falling in front of a trunk from one frame to the next)
 
-    Afterwards, your method must be able to count the number of unique trunks in the sequence of Images, without undercounting or double-counting any given trunk.
 
-    The result of this part should be one number, indicating the total number of trunks in the sequence of 49 Images.
+    The code below is designed to "group" the masks together and ultimately label each group with a singular label.
+    The "grouping" of masks refers to masks that are similar in nature and correspond to the same tree.
+    The grouping algorithm has two modes that are designed to be used in succession with each other. The first mode
+    determines the direction of the camera, and the second mode does the final groupings using the direction output
+    from the first mode.
 
-    In addition, output the inferences of your ML model on each of the 49 Images, with the tree mask visible in translucent red, plotted on top of the original RGB image. On top of each mask, plot text indicating the unique ID of each tree. (i.e. if there are 20 unique trees in the sequence of 49 Images, the first 4 Images might all contain tree 1, the 5th image might contain tree 1 and tree 2, the next 5 Images might only contain tree 2, etc. Plot the unique ID assigned to each tree on top of that tree's mask).
+    For determining direction, the algorithm will compare each mask with the masks in the following 8 frames,
+    scoring their similarity using shape, size, proximity in the y direction, and absolute proximity in the x direction,
+    and note the horizontal distance. All successful mask pairings are then added to an array, and the median x_distance
+    of those pairings determines if the camera is moving left or right. This algorithm basically assumes that even
+    without pairing via direction, it will still achieve greater than 50% accuracy just using the shape data and raw
+    absolute pixel distances, thus the 50th percentile pairing will determine in which direction the camera is moving.
+
+    After the direction is determined, the same algorithm is performed, but now additionally filtering out any masks
+    that are not in the proper direction (e.g. a camera moving left such as the one in evalation set, the x position of
+    the same trunk in the image will increase upon subsequent images, thus all masks that show strong similarities but
+    are in the wrong direction will be filtered out).
+
+    This was also used as an opportunity for filtering out more false positives. If a mask does not have any matching
+    masks in other images, it was deemed to be a false positive. Special logic was added for the first and last images,
+    as those images could contain trunks that appeared only in those images and none other (for a trunk leaving the frame
+    after the first image, or a trunk entering the frame on the last image), so if those were detected, they were given
+    also given a label.
     """
-    # Count trunks here
+    # Add centroid data to the masks
     for result in results:
         if len(result) < 1:
             continue
-        result.masks.sizes = []
-        result.masks.centroids = []
-        result.masks.ids = []
+        result.masks.sizes = [] # size of the mask in pixels
+        result.masks.centroids = [] # coordinates of the center of the mask
+        result.masks.ids = [] # an id of the mask in the form of (result index, mask index) for easier accessing
 
         for mask in result.masks.data:
             centroid = mask_centroid(mask)
             result.masks.centroids.append(centroid)
             result.masks.sizes.append(np.sum(mask.cpu().numpy()))
-    camera_direction = group_masks(results, determine_direction=True)
+
+    # Determine the camera direction
+    camera_direction = calculate_mask_similarities(results, determine_direction=True)
     print(f'Determined Camera Direction: {camera_direction}')
-    pairing_table = group_masks(results, direction=camera_direction)
-    pairing_table.to_csv('pairing_table.csv')
-    tree_idx = 0
-    pairing_table = pd.read_csv('pairing_table.csv')
-    groups = []
-    for i, row in pairing_table.iterrows():
-        val1 = (int(row['result idx']), int(row['result mask idx']))
-        val2 = (int(row['comparison result idx']), int(row['comparison result mask idx']))
-        if i == 0:
-            groups.append([])
-            groups[0].append(val1)
-            groups[0].append(val2)
+
+    # Determine the pairings of similar masks
+    pairing_table = calculate_mask_similarities(results, direction=camera_direction)
+    if OUTPUT_P4_PAIRING_TABLE:
+        pairing_table.to_csv('pairing_table.csv')
+
+    # With the pairings of similar masks, create the groups of similar masks
+    groups = create_groups_from_pairing_table(pairing_table)
+
+    # special logic for the first and last image because a trunk may only appear once in these images
+    for i, result in enumerate(results):
+        if i not in [0,len(results)-1]:
             continue
-        found_group = False
-        for group in groups:
-            if val1 in group:
-                found_group = True
-                if val2 not in group:
-                    group.append(val2)
-                break
-        if not found_group:
-            groups.append([])
-            groups[-1].append(val1)
-            groups[-1].append(val2)
+        if len(result) < 1:
+            continue
+        for j,mask in enumerate(results.masks.data):
+            mask_id = (len(results)-1,j)
+            mask_id_in_a_group = False
+            for group in groups:
+                if mask_id in group:
+                    mask_id_in_a_group = True
+            if not mask_id_in_a_group:
+                groups.append([mask_id])
 
-    # special logic for last image because if a trunk appears, it is impossible for it to be part of a group
-    for j,mask in enumerate(results[-1].masks.data):
-        mask_id = (len(results)-1,j)
-        mask_id_in_a_group = False
-        for group in groups:
-            if mask_id in group:
-                mask_id_in_a_group = True
-        if not mask_id_in_a_group:
-            groups.append([mask_id])
-
-
+    # create a dictionary of the labels of the trunks, naming them
     class_labels = {}
     for i,group in enumerate(groups):
-        class_labels[i] = f"Trunk_{i}"
+        class_labels[i] = f"Trunk_{i+1}"
 
+    # Add the group index to each result. If a mask does not belong to a group, remove it
     for i, result in enumerate(results):
         if len(result) < 1:
             continue
@@ -290,16 +309,12 @@ def part4(results):
         result.masks = result.masks[keep_mask_indeces]
         result.boxes = result.boxes[keep_mask_indeces]
 
-    # save the labels to a folder
-    if P4_OUTPUTS_FOLDER_NAME in os.listdir():
-        shutil.rmtree(P4_OUTPUTS_FOLDER_NAME)
-    os.mkdir(P4_OUTPUTS_FOLDER_NAME)
-
-    output_p4(results, class_labels, P4_OUTPUTS_FOLDER_NAME)
-
     # Print total number of trunks
+    print(f"Calculated total number of trunks: {len(groups)}")
 
     # Display each of the 49 annotated Images with masks in translucent red on top of the RGB image, and unique tree IDs on top of each detected mask
+    output_p4(results, class_labels, display_images=True, output_folder_name=P4_OUTPUTS_FOLDER_NAME)
+
 
 def part5():
     """
@@ -339,7 +354,7 @@ Assume that the location of the first tree is (x, y) = (0 meters, 0 meters), and
 if __name__ == '__main__':
     # part1()
     # if SPLIT_TRAINING_DATA:
-    #     split_training_data(0.8)
+    #     split_training_data('YoloTrainData', TRAINING_DATA_FOLDER_NAME, 0.8)
     # output_images, output_results = part2()
     # with open("p2_output_results.pkl", "wb") as f:
     #     pickle.dump(output_results, f)
